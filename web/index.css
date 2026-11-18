@@ -193,6 +193,21 @@ button:disabled {
     font-style: italic;
 }
 
+.status {
+    min-height: 1.5rem;
+    margin-top: 1rem;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.status.error {
+    color: #b91c1c;
+}
+
+.status.success {
+    color: #166534;
+}
+
 #uploadLoading, #answerLoading, #restartLoading {
     text-align: center;
     color: var(--text-muted);

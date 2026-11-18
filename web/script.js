@@ -7,158 +7,222 @@ const pathInput = document.getElementById('pathInput');
 const fileInput = document.getElementById('fileInput');
 const questionInput = document.getElementById('questionInput');
 
-const answerDiv = document.getElementById('answer');
+const answerContent = document.getElementById('answerContent');
 
 const uploadLoading = document.getElementById('uploadLoading');
 const answerLoading = document.getElementById('answerLoading');
 const restartLoading = document.getElementById('restartLoading');
 
 const emptyMessage = document.getElementById('emptyMessage');
+const appStatus = document.getElementById('appStatus');
 
-const baseURL = "http://127.0.0.1:8000"
+const baseURL = 'http://127.0.0.1:8000';
+let databaseIsEmpty = true;
+
+function setStatus(message, type = '') {
+    appStatus.textContent = message;
+    appStatus.className = `status${type ? ` ${type}` : ''}`;
+}
+
+function setLoading(element, isLoading) {
+    element.classList.toggle('hidden', !isLoading);
+}
+
+function updateControls() {
+    restartButton.disabled = databaseIsEmpty;
+    askButton.disabled = databaseIsEmpty || questionInput.value.trim() === '';
+}
+
+async function readJson(response) {
+    try {
+        return await response.json();
+    } catch {
+        return {};
+    }
+}
+
+async function refreshDatabaseState() {
+    try {
+        const response = await fetch(`${baseURL}/database/`);
+        const data = await readJson(response);
+
+        if (!response.ok) {
+            throw new Error(data.detail || 'Failed to check database');
+        }
+
+        databaseIsEmpty = Boolean(data.is_empty);
+        emptyMessage.textContent = databaseIsEmpty
+            ? 'No documents uploaded yet.'
+            : 'Documents are ready for questions.';
+        updateControls();
+    } catch (error) {
+        setStatus(error.message, 'error');
+        databaseIsEmpty = true;
+        updateControls();
+    }
+}
 
 uploadFileButton.addEventListener('click', async () => {
-    uploadLoading.classList.remove('hidden');
     const file = fileInput.files[0];
+
+    if (!file) {
+        setStatus('Select a PDF file before uploading.', 'error');
+        return;
+    }
+
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        setStatus('Only PDF files are supported.', 'error');
+        return;
+    }
+
+    setLoading(uploadLoading, true);
+    setStatus('Uploading and processing document...');
     const formData = new FormData();
     formData.append('file', file);
 
     try {
-        response = await fetch(`${baseURL}/upload-file/`, {
+        const response = await fetch(`${baseURL}/upload-file/`, {
             method: 'POST',
-            body: formData
+            body: formData,
         });
-
-        data = await response.json();
-        fileInput.value = '';
+        const data = await readJson(response);
 
         if (!response.ok) {
-            alert('Upload failed: ' + (data.detail || 'Unknown error'));
             throw new Error(data.detail || 'Upload failed');
         }
 
-        alert('File uploaded and processed successfully');
-        window.location.reload();
-
+        fileInput.value = '';
+        setStatus(data.status || 'File uploaded and processed successfully.', 'success');
+        await refreshDatabaseState();
     } catch (error) {
-        console.error('Error:', error);
+        setStatus(error.message, 'error');
+        console.error('Upload failed:', error);
     } finally {
-        uploadLoading.classList.add('hidden');
+        setLoading(uploadLoading, false);
     }
 });
 
 uploadButton.addEventListener('click', async () => {
-    uploadLoading.classList.remove('hidden');
-    const path = pathInput.value;
+    const path = pathInput.value.trim();
+
+    if (!path) {
+        setStatus('Enter a PDF file path before uploading.', 'error');
+        return;
+    }
+
+    if (!path.toLowerCase().endsWith('.pdf')) {
+        setStatus('Only PDF file paths are supported.', 'error');
+        return;
+    }
+
+    setLoading(uploadLoading, true);
+    setStatus('Uploading and processing document...');
+
     try {
-        response = await fetch(`${baseURL}/upload/`, {
+        const response = await fetch(`${baseURL}/upload/`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ file_path: path })
+            body: JSON.stringify({ file_path: path }),
         });
-
-        data = await response.json();
-        pathInput.value = '';
+        const data = await readJson(response);
 
         if (!response.ok) {
-            alert('Upload failed: ' + (data.detail || 'Unknown error'));
             throw new Error(data.detail || 'Upload failed');
         }
 
-        alert('File uploaded and processed successfully');
-        window.location.reload();
-
+        pathInput.value = '';
+        setStatus(data.status || 'File uploaded and processed successfully.', 'success');
+        await refreshDatabaseState();
     } catch (error) {
-        console.error('Error:', error);
+        setStatus(error.message, 'error');
+        console.error('Upload failed:', error);
     } finally {
-        uploadLoading.classList.add('hidden');
+        setLoading(uploadLoading, false);
     }
-});
-
-
-askButton.addEventListener('click', async () => {
-    await queryRequest();
 });
 
 async function queryRequest() {
-    answerLoading.classList.remove('hidden');
-    const question = questionInput.value;
+    const question = questionInput.value.trim();
+
+    if (!question) {
+        setStatus('Enter a question before submitting.', 'error');
+        return;
+    }
+
+    if (databaseIsEmpty) {
+        setStatus('Upload a document before asking a question.', 'error');
+        return;
+    }
+
+    setLoading(answerLoading, true);
+    askButton.disabled = true;
+    answerContent.replaceChildren();
+
     try {
-        response = await fetch(`${baseURL}/query/`, {
+        const response = await fetch(`${baseURL}/query/`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question: question })
+            body: JSON.stringify({ question }),
         });
-
-        data = await response.json();
-        questionInput.value = '';
+        const data = await readJson(response);
 
         if (!response.ok) {
-            alert('Question failed: ' + (data.detail || 'Unknown error'));
             throw new Error(data.detail || 'Question failed');
         }
 
-        answerDiv.innerHTML = `<h3 id="answerTitle">Answer:</h3><p id="answerContent">${data.results}</p>`;
+        const title = document.createElement('h3');
+        title.textContent = 'Answer:';
 
+        const paragraph = document.createElement('p');
+        paragraph.textContent = String(data.results ?? 'No answer was returned.');
+
+        answerContent.replaceChildren(title, paragraph);
+        questionInput.value = '';
     } catch (error) {
-        console.error('Error:', error);
+        setStatus(error.message, 'error');
+        console.error('Question failed:', error);
     } finally {
-        answerLoading.classList.add('hidden');
+        setLoading(answerLoading, false);
+        updateControls();
     }
 }
 
-restartButton.addEventListener('click', async () => {
-    restartLoading.classList.remove('hidden');
+askButton.addEventListener('click', queryRequest);
 
-    pathInput.value = '';
-    questionInput.value = '';
-    answerDiv.innerHTML = '';
+questionInput.addEventListener('input', updateControls);
+questionInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !askButton.disabled) {
+        event.preventDefault();
+        void queryRequest();
+    }
+});
+
+restartButton.addEventListener('click', async () => {
+    setLoading(restartLoading, true);
+    restartButton.disabled = true;
 
     try {
-        response = await fetch(`${baseURL}/database/`, {
-            method: 'DELETE'
+        const response = await fetch(`${baseURL}/database/`, {
+            method: 'DELETE',
         });
-
-        data = await response.json();
+        const data = await readJson(response);
 
         if (!response.ok) {
-            alert('Failed to clear database: ' + (data.detail || 'Unknown error'));
             throw new Error(data.detail || 'Clear database failed');
         }
 
-        alert('Database cleared successfully');
-        window.location.reload();
-
+        pathInput.value = '';
+        questionInput.value = '';
+        answerContent.replaceChildren();
+        setStatus(data.status || 'Database cleared successfully.', 'success');
+        await refreshDatabaseState();
     } catch (error) {
-        console.error('Error:', error);
+        setStatus(error.message, 'error');
+        console.error('Clear database failed:', error);
+        updateControls();
     } finally {
-        restartLoading.classList.add('hidden');
+        setLoading(restartLoading, false);
     }
 });
 
-document.addEventListener('DOMContentLoaded', async () => {
-    try {
-        response = await fetch(`${baseURL}/database/`, {
-            method: 'GET'
-        });
-
-        data = await response.json();
-
-        if (!response.ok) {
-            alert('Failed to check database: ' + (data.detail || 'Unknown error'));
-            throw new Error(data.detail || 'Check database failed');
-        }
-
-        if (data.is_empty) {
-            restartButton.disabled = true;
-            geminiAskButton.disabled = true;
-            llamaAskButton.disabled = true;
-        } else {
-            emptyMessage.textContent = "";
-            restartButton.disabled = false;
-        }
-
-    } catch (error) {
-        console.error('Error:', error);
-    }
-});
+document.addEventListener('DOMContentLoaded', refreshDatabaseState);
