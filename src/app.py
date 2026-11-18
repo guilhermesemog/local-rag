@@ -1,5 +1,4 @@
 from services import UploadService, LLMService, DBService, build_llm
-from db.factory_db import get_vector_db
 from embedding_engine import get_embedding_engine
 
 from pathlib import Path
@@ -13,7 +12,6 @@ load_dotenv()
 import os
 model = os.getenv("LLM_MODEL", "dummy")
 llm = build_llm(model)
-vector_db = get_vector_db()
 
 app = FastAPI()
 
@@ -59,7 +57,6 @@ def upload_file(file: UploadFile):
 
     service = UploadService(
         str(temp_file_path),
-        db=vector_db,
         engine=get_embedding_engine(),
     )
     service.insert_documents()
@@ -78,7 +75,6 @@ def upload_document(request: PDFRequest):
 
     service = UploadService(
         str(file_path),
-        db=vector_db,
         engine=get_embedding_engine(),
     )
     service.insert_documents()
@@ -90,7 +86,6 @@ def query_llm(request: QueryRequest):
     service = LLMService(
         llm,
         embedding_engine=get_embedding_engine(),
-        db=vector_db,
     )
     results = service.answer(request.question)
     return {"results": results}
@@ -98,13 +93,13 @@ def query_llm(request: QueryRequest):
 
 @app.delete("/database/")
 def clear_database():
-    service = DBService(db=vector_db)
+    service = DBService()
     service.clear_database()
     return {"status": "Vector database cleared."}
 
 
 @app.get("/database/")
 def is_database_empty():
-    service = DBService(db=vector_db)
+    service = DBService()
     empty = service.check_empty()
     return {"is_empty": empty}
