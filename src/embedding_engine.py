@@ -1,4 +1,5 @@
 from sentence_transformers import SentenceTransformer
+from functools import lru_cache
 
 class EmbeddingEngine:
     def __init__(self, model_name: str = "all-MiniLM-L6-v2", device: str | None = None):
@@ -28,3 +29,8 @@ class EmbeddingEngine:
             raise Exception("Failed to generate embeddings")
 
         return embeddings.tolist()
+
+
+@lru_cache(maxsize=1)
+def get_embedding_engine() -> EmbeddingEngine:
+    return EmbeddingEngine()

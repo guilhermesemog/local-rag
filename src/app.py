@@ -1,8 +1,10 @@
 from services import UploadService, LLMService, DBService, build_llm
+from db.factory_db import get_vector_db
+from embedding_engine import get_embedding_engine
 
 from pathlib import Path
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from dotenv import load_dotenv
@@ -11,6 +13,7 @@ load_dotenv()
 import os
 model = os.getenv("LLM_MODEL", "dummy")
 llm = build_llm(model)
+vector_db = get_vector_db()
 
 app = FastAPI()
 
@@ -53,8 +56,12 @@ def upload_file(file: UploadFile):
     temp_file_path = Path(f"/tmp/{file.filename}")
     with temp_file_path.open("wb") as buffer:
         buffer.write(file.file.read())
-        
-    service = UploadService(str(temp_file_path))
+
+    service = UploadService(
+        str(temp_file_path),
+        db=vector_db,
+        engine=get_embedding_engine(),
+    )
     service.insert_documents()
     temp_file_path.unlink()
     return {"status": "Documents inserted into the vector database."}
@@ -69,25 +76,35 @@ def upload_document(request: PDFRequest):
     if not file_path.suffix.lower() == ".pdf":
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
 
-    service = UploadService(str(file_path))
+    service = UploadService(
+        str(file_path),
+        db=vector_db,
+        engine=get_embedding_engine(),
+    )
     service.insert_documents()
     return {"status": "Documents inserted into the vector database."}
 
 
 @app.post("/query/")
 def query_llm(request: QueryRequest):
-    service = LLMService(llm)
+    service = LLMService(
+        llm,
+        embedding_engine=get_embedding_engine(),
+        db=vector_db,
+    )
     results = service.answer(request.question)
     return {"results": results}
 
 
 @app.delete("/database/")
-def clear_database(service: DBService = Depends(DBService)):
+def clear_database():
+    service = DBService(db=vector_db)
     service.clear_database()
     return {"status": "Vector database cleared."}
 
 
 @app.get("/database/")
-def is_database_empty(service: DBService = Depends(DBService)):
+def is_database_empty():
+    service = DBService(db=vector_db)
     empty = service.check_empty()
     return {"is_empty": empty}
