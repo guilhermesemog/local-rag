@@ -102,7 +102,8 @@ You can interact with the API through the automatic documentation (Swagger UI) a
     *   Use `POST /query/` with `{"question": "Your question here"}`.
 
 3. **Changing Models**
-    *   Change the .env `LLM_MODEL` variable to change the model in use. Available now: [`gemini`, `ollama`, `hugging-face-model-id`]
+    *   Change the .env `LLM_MODEL` variable to change the provider in use. Available now: [`gemini`, `ollama`, `hugging-face-model-id`].
+    *   For Gemini, the default model is `gemini-3.8-flash`. It can be overridden with `GEMINI_MODEL`.
 
 3.  **Clear Database**:
     *   Use `DELETE /clear-database/` to remove all documents and embeddings.

@@ -1,4 +1,6 @@
 import json
+import os
+
 from db.vector_db import VectorDB
 from db.factory_db import get_vector_db
 from embedding_engine import EmbeddingEngine
@@ -14,7 +16,8 @@ from llm.base import LLM
 
 def build_llm(model_type: str, **kwargs) -> LLM:
     if model_type == "gemini":
-        return GeminiLLM(model_name=kwargs.get("model_name", "gemini-2.5-flash"))
+        default_model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        return GeminiLLM(model_name=kwargs.get("model_name", default_model))
     elif model_type == "ollama":
         return OllamaLLM(model_name=kwargs.get("model_name", "llama3"), base_url=kwargs.get("base_url", "http://localhost:11434"), temperature=kwargs.get("temperature", 0.7))
     elif model_type == "dummy":
