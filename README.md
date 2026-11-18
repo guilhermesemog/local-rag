@@ -87,6 +87,9 @@ python3 -m http.server 8002
 # or use an extension like live server, it will work the same.
 ```
 
+Open `http://localhost:8002` in the browser. Do not open `web/index.html`
+directly with `file://`, since browsers treat that page as `origin: null`.
+
 ## How to Use
 
 You can interact with the API through the automatic documentation (Swagger UI) at `http://localhost:8000/docs`.

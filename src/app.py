@@ -15,7 +15,9 @@ llm = build_llm(model)
 app = FastAPI()
 
 origins = [
+    "null",
     "http://localhost",
+    "http://localhost:8002",
     "http://localhost:5500",
     "http://127.0.0.1",
     "http://127.0.0.1:5500",
