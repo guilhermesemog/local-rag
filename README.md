@@ -92,6 +92,10 @@ directly with `file://`, since browsers treat that page as `origin: null`.
 
 ## How to Use
 
+### Automated Tests
+
+Run the unit and API tests with `pytest -q`. The suite uses temporary SQLite databases and mocks external model calls. PostgreSQL integration tests are skipped by default; set `LOCAL_RAG_TEST_POSTGRES=1` and configure the database environment variables to run them against a dedicated test database.
+
 You can interact with the API through the automatic documentation (Swagger UI) at `http://localhost:8000/docs`.
 
 1.  **PDF Upload**:

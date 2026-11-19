@@ -261,7 +261,7 @@ tests/
 
 ## Critério de conclusão
 
-Todos os principais comportamentos possuem testes reproduzíveis e a suíte pode ser executada com um único comando.
+Todos os principais comportamentos possuem testes reproduzíveis e a suíte pode ser executada com um único comando. Validada pelo usuário em 2026-11-19: 10 testes passaram, 1 teste PostgreSQL opcional foi ignorado e 1 aviso de falha foi corrigido antes da confirmação final.
 
 ---
 

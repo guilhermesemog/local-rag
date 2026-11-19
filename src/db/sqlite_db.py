@@ -6,7 +6,9 @@ from typing import List, Tuple
 
 class SQLiteVectorDB:
     def __init__(self, db_path: str = "sqlite.db"):
-        self.conn = sqlite3.connect(db_path or ":memory:")
+        # FastAPI's sync endpoints run in a worker thread; allow the shared
+        # connection to be used by that thread for request handling.
+        self.conn = sqlite3.connect(db_path or ":memory:", check_same_thread=False)
         self.embeddings: List[np.ndarray] = []
         self.ids: List[int] = []
         self.create_table()
