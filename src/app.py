@@ -9,9 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 load_dotenv()
 
-import os
-model = os.getenv("LLM_MODEL", "dummy")
-llm = build_llm(model)
+llm = build_llm()
 
 app = FastAPI()
 

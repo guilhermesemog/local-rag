@@ -14,14 +14,26 @@ from llm.dummy import DummyLLM
 from llm.transformers import TransformersLLM
 from llm.base import LLM
 
-def build_llm(model_type: str, **kwargs) -> LLM:
+def build_llm(model_type: str | None = None, **kwargs) -> LLM:
+    model_type = model_type or os.getenv("LLM_MODEL", "dummy")
+
     if model_type == "gemini":
-        default_model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
-        return GeminiLLM(model_name=kwargs.get("model_name", default_model))
+        model_name = kwargs.get("model_name") or os.getenv("GEMINI_MODEL")
+        if not model_name:
+            raise ValueError("GEMINI_MODEL must be configured when LLM_MODEL=gemini")
+        return GeminiLLM(model_name=model_name)
     elif model_type == "ollama":
-        return OllamaLLM(model_name=kwargs.get("model_name", "llama3"), base_url=kwargs.get("base_url", "http://localhost:11434"), temperature=kwargs.get("temperature", 0.7))
+        model_name = kwargs.get("model_name") or os.getenv("OLLAMA_MODEL", "llama3")
+        base_url = kwargs.get("base_url") or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        temperature = float(kwargs.get("temperature", os.getenv("OLLAMA_TEMPERATURE", "0.7")))
+        return OllamaLLM(model_name=model_name, base_url=base_url, temperature=temperature)
     elif model_type == "dummy":
         return DummyLLM()
+    elif model_type in ("transformers", "hugging-face"):
+        model_name = kwargs.get("model_name") or os.getenv("TRANSFORMERS_MODEL")
+        if not model_name:
+            raise ValueError("TRANSFORMERS_MODEL must be configured when LLM_MODEL=transformers")
+        return TransformersLLM(model_name=model_name)
     else:
         return TransformersLLM(model_name=kwargs.get("model_name", model_type))
 
