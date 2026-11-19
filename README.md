@@ -103,7 +103,9 @@ You can interact with the API through the automatic documentation (Swagger UI) a
 
 3. **Changing Models**
     *   Change the .env `LLM_MODEL` variable to change the provider in use. Available now: [`gemini`, `ollama`, `hugging-face-model-id`].
-    *   For Gemini, the default model is `gemini-3.8-flash`. It can be overridden with `GEMINI_MODEL`.
+    *   For Gemini, configure `GEMINI_MODEL`.
+    *   For Ollama, configure `OLLAMA_MODEL`, `OLLAMA_BASE_URL`, and `OLLAMA_TEMPERATURE`.
+    *   For Transformers, set `LLM_MODEL=transformers` and configure `TRANSFORMERS_MODEL`.
     *   Gemini requests use `GEMINI_REQUEST_TIMEOUT` and `GEMINI_RETRIES`; the defaults are 30 seconds and 1 retry.
 
 3.  **Clear Database**:
