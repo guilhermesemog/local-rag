@@ -1,5 +1,6 @@
 import json
 import os
+import logging
 
 from db.vector_db import VectorDB
 from db.factory_db import get_vector_db
@@ -13,6 +14,15 @@ from llm.ollama import OllamaLLM
 from llm.dummy import DummyLLM
 from llm.transformers import TransformersLLM
 from llm.base import LLM
+from errors import (
+    DatabaseError,
+    DocumentParseError,
+    EmptyDocumentError,
+    EmbeddingError,
+    LLMProviderError,
+)
+
+logger = logging.getLogger(__name__)
 
 def build_llm(model_type: str | None = None, **kwargs) -> LLM:
     model_type = model_type or os.getenv("LLM_MODEL", "dummy")
@@ -46,26 +56,36 @@ class UploadService:
 
     def insert_documents(self):
         try:
+            if self.parser is None:
+                raise DocumentParseError()
             cleaned_docs = self.parser.clean_documents()
         except Exception as exc:
-            raise ValueError("The PDF could not be parsed.") from exc
+            if isinstance(exc, DocumentParseError):
+                raise
+            logger.exception("PDF parsing failed")
+            raise DocumentParseError() from exc
 
         if not cleaned_docs:
-            return False
+            raise EmptyDocumentError()
 
-        content = self.parser.split_documents()
+        try:
+            content = self.parser.split_documents()
+        except Exception as exc:
+            logger.exception("PDF splitting failed")
+            raise DocumentParseError() from exc
+
         texts = [doc.page_content for doc in content]
         embeddings = self.engine.generate_embeddings(texts)
-
-        print(f"Generated embeddings for {len(embeddings)} documents.")
 
         data_to_insert = []
         for i, doc in enumerate(content):
             data_to_insert.append((doc.page_content, json.dumps({}), embeddings[i]))
 
-        print(f"Inserting {len(data_to_insert)} documents into the vector database.")
-
-        self.db.insert_documents(data_to_insert)
+        try:
+            self.db.insert_documents(data_to_insert)
+        except Exception as exc:
+            logger.exception("Document insertion failed")
+            raise DatabaseError() from exc
         return True
 
 
@@ -77,18 +97,31 @@ class LLMService:
         
     def _query(self, query, top_k=5):
         query_embedding = self.engine.generate_embeddings([query])[0]
-        results = self.db.search(query_embedding, limit=top_k)
-        return results
+        try:
+            return self.db.search(query_embedding, limit=top_k)
+        except Exception as exc:
+            logger.exception("Document search failed")
+            raise DatabaseError() from exc
 
     def answer(self, question: str):
-        if self.db.is_empty():
-            return "The vector database is empty. Please upload documents first."
+        try:
+            if self.db.is_empty():
+                raise EmptyDocumentError()
+        except EmptyDocumentError:
+            raise
+        except Exception as exc:
+            logger.exception("Vector database availability check failed")
+            raise DatabaseError() from exc
 
         similar_docs = self._query(question, top_k=6)
         context = "\n".join([doc[1] for doc in similar_docs])
 
         prompt = chat_template.format(context=context, question=question)
-        response = self.llm.generate_text(prompt)
+        try:
+            response = self.llm.generate_text(prompt)
+        except Exception as exc:
+            logger.exception("Language model generation failed")
+            raise LLMProviderError() from exc
 
         return response
 
@@ -98,7 +131,15 @@ class DBService:
         self.db = db or get_vector_db()
 
     def check_empty(self) -> bool:
-        return self.db.is_empty()
+        try:
+            return self.db.is_empty()
+        except Exception as exc:
+            logger.exception("Vector database status check failed")
+            raise DatabaseError() from exc
         
     def clear_database(self):
-        self.db.delete_all_documents()
+        try:
+            self.db.delete_all_documents()
+        except Exception as exc:
+            logger.exception("Vector database cleanup failed")
+            raise DatabaseError() from exc

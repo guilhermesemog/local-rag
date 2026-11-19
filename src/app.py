@@ -2,17 +2,41 @@ from services import UploadService, LLMService, DBService, build_llm
 from embedding_engine import get_embedding_engine
 
 import tempfile
+import logging
+import os
 from pathlib import Path
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from errors import AppError
 
 from dotenv import load_dotenv
 load_dotenv()
 
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
+
 llm = build_llm()
 
 app = FastAPI()
+
+
+@app.exception_handler(AppError)
+async def handle_app_error(_request, exc: AppError):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.public_message},
+    )
+
+
+@app.exception_handler(Exception)
+async def handle_unexpected_error(_request, exc: Exception):
+    logger.exception("Unhandled API error", exc_info=exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected server error occurred."},
+    )
 
 origins = [
     "null",
@@ -77,9 +101,7 @@ def upload_file(file: UploadFile | None = None):
             raise HTTPException(status_code=400, detail="The uploaded file does not have a valid PDF signature.")
 
         service = UploadService(str(temp_file_path), engine=get_embedding_engine())
-        inserted = service.insert_documents()
-        if inserted is False:
-            raise HTTPException(status_code=400, detail="The PDF contains no processable text.")
+        service.insert_documents()
         return {"status": "Documents inserted into the vector database."}
     finally:
         if temp_file_path is not None:

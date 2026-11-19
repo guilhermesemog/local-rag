@@ -201,7 +201,7 @@ Eliminar falhas genéricas e tornar a API previsível para a interface e para fu
 
 ## Critério de conclusão
 
-A API rejeita entradas inválidas e relata falhas externas de modo consistente, sem exceções genéricas ou dados sensíveis.
+A API rejeita entradas inválidas e relata falhas externas de modo consistente, sem exceções genéricas ou dados sensíveis. Etapa validada manualmente pelo usuário em 2026-11-19.
 
 ---
 
