@@ -6,13 +6,19 @@ from services import LLMService
 
 
 class FakeDB:
-    def __init__(self, empty=False): self.empty = empty
-    def is_empty(self): return self.empty
-    def search(self, *_args, **_kwargs): return [(1, "context", {}, 1.0)]
+    def __init__(self, empty=False):
+        self.empty = empty
+
+    def is_empty(self):
+        return self.empty
+
+    def search(self, *_args, **_kwargs):
+        return [(1, "context", {}, 1.0)]
 
 
 class FakeEngine:
-    def generate_embeddings(self, _texts): return [[1.0] * 384]
+    def generate_embeddings(self, _texts):
+        return [[1.0] * 384]
 
 
 def test_llm_service_empty_db():
@@ -27,6 +33,8 @@ def test_llm_service_answers_with_context():
 
 def test_llm_provider_failure_is_mapped():
     class BrokenLLM:
-        def generate_text(self, _prompt): raise RuntimeError("secret")
+        def generate_text(self, _prompt):
+            raise RuntimeError("secret")
+
     with pytest.raises(LLMProviderError):
         LLMService(BrokenLLM(), FakeEngine(), FakeDB()).answer("question")

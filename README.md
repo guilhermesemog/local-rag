@@ -96,6 +96,8 @@ directly with `file://`, since browsers treat that page as `origin: null`.
 
 Run the unit and API tests with `pytest -q`. The suite uses temporary SQLite databases and mocks external model calls. PostgreSQL integration tests are skipped by default; set `LOCAL_RAG_TEST_POSTGRES=1` and configure the database environment variables to run them against a dedicated test database.
 
+GitHub Actions runs focused Ruff checks and the automated tests on pull requests and pushes to `main`. The workflow installs the lightweight `requirements-ci.txt`; run `ruff check --select E4,E7,E9,F src tests`, `ruff format --check tests`, and `python -m pytest -q` locally to match CI. Formatting checks currently cover tests; formatting existing application code is deferred to avoid a broad unrelated diff.
+
 You can interact with the API through the automatic documentation (Swagger UI) at `http://localhost:8000/docs`.
 
 1.  **PDF Upload**:

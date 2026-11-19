@@ -18,8 +18,11 @@ def test_upload_accepts_pdf_and_query(api_client, monkeypatch):
     import app
 
     class FakeUpload:
-        def __init__(self, *_args, **_kwargs): pass
-        def insert_documents(self): return True
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def insert_documents(self):
+            return True
 
     monkeypatch.setattr(app, "UploadService", FakeUpload)
     monkeypatch.setattr(app, "get_embedding_engine", lambda: object())

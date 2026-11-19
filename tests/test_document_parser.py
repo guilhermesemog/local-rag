@@ -14,6 +14,9 @@ def test_parser_loads_pdf_and_splits(sample_pdf):
 
 def test_parser_cleans_whitespace():
     parser = DocumentParser.__new__(DocumentParser)
-    parser._document = [Document(page_content="  hello\n\t world "), Document(page_content="  ")]
+    parser._document = [
+        Document(page_content="  hello\n\t world "),
+        Document(page_content="  "),
+    ]
     cleaned = parser.clean_documents()
     assert [doc.page_content for doc in cleaned] == ["hello world"]

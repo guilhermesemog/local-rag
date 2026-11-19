@@ -302,7 +302,7 @@ Garantir que alterações futuras não quebrem os principais comportamentos auto
 
 ## Critério de conclusão
 
-O CI protege o projeto contra regressões básicas antes da próxima mudança estrutural.
+O CI protege o projeto contra regressões básicas antes da próxima mudança estrutural. Workflow implementado; validar sua primeira execução no GitHub antes de considerar a etapa concluída.
 
 ---
 

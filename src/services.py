@@ -2,7 +2,6 @@ import json
 import os
 import logging
 
-from db.vector_db import VectorDB
 from db.factory_db import get_vector_db
 from embedding_engine import EmbeddingEngine
 from document_parser import DocumentParser
@@ -18,7 +17,6 @@ from errors import (
     DatabaseError,
     DocumentParseError,
     EmptyDocumentError,
-    EmbeddingError,
     LLMProviderError,
 )
 

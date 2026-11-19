@@ -29,7 +29,9 @@ def fake_embeddings():
 @pytest.fixture
 def postgres_db():
     if os.getenv("LOCAL_RAG_TEST_POSTGRES") != "1":
-        pytest.skip("Set LOCAL_RAG_TEST_POSTGRES=1 and configure test database variables")
+        pytest.skip(
+            "Set LOCAL_RAG_TEST_POSTGRES=1 and configure test database variables"
+        )
     from db.postgres_db import PostgresVectorDB
 
     database = PostgresVectorDB()
@@ -45,6 +47,7 @@ def api_client(monkeypatch, sqlite_db):
     from llm.dummy import DummyLLM
 
     monkeypatch.setattr(app, "llm", DummyLLM())
+
     class FakeEmbeddingEngine:
         def generate_embeddings(self, _texts):
             return [[1.0] * 384]

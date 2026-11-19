@@ -1,6 +1,3 @@
-from db.sqlite_db import SQLiteVectorDB
-
-
 def test_sqlite_insert_search_clear(sqlite_db, fake_embeddings):
     sqlite_db.insert_documents([("hello", {}, fake_embeddings[0])])
     assert sqlite_db.is_empty() is False
