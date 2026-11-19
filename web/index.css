@@ -72,18 +72,6 @@ h1, h2, h3 {
 }
 
 /* Upload Section */
-#uploadMethods {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-}
-
-#uploadMethods > div {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
 input[type="text"],
 input[type="file"] {
     width: 100%;

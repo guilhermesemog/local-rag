@@ -13,23 +13,10 @@
     <section id="upload">
 
         <h2>Enter your PDF File</h2>
-        <section id="uploadMethods">
-
-            <div>
-                <input type="file" name="file" id="fileInput" accept=".pdf,application/pdf" />
-                <div>
-                    <button id="uploadFileButton">Upload File</button>
-                </div>
-            </div>
-
-            <div>
-                <input type="text" id="pathInput" placeholder="Ex: /path/to/your/file.pdf" />
-                <div>
-                    <button id="uploadButton">Upload Path</button>
-                </div>
-            </div>
-
-        </section>
+        <input type="file" name="file" id="fileInput" accept=".pdf,application/pdf" />
+        <div>
+            <button id="uploadFileButton">Upload File</button>
+        </div>
 
         <p id="emptyMessage">No documents uploaded yet.</p>
         <p id="appStatus" class="status" role="status" aria-live="polite"></p>

@@ -1,9 +1,7 @@
-const uploadButton = document.getElementById('uploadButton');
 const askButton = document.getElementById('askButton');
 const restartButton = document.getElementById('restartButton');
 const uploadFileButton = document.getElementById('uploadFileButton');
 
-const pathInput = document.getElementById('pathInput');
 const fileInput = document.getElementById('fileInput');
 const questionInput = document.getElementById('questionInput');
 
@@ -102,45 +100,6 @@ uploadFileButton.addEventListener('click', async () => {
     }
 });
 
-uploadButton.addEventListener('click', async () => {
-    const path = pathInput.value.trim();
-
-    if (!path) {
-        setStatus('Enter a PDF file path before uploading.', 'error');
-        return;
-    }
-
-    if (!path.toLowerCase().endsWith('.pdf')) {
-        setStatus('Only PDF file paths are supported.', 'error');
-        return;
-    }
-
-    setLoading(uploadLoading, true);
-    setStatus('Uploading and processing document...');
-
-    try {
-        const response = await fetch(`${baseURL}/upload/`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ file_path: path }),
-        });
-        const data = await readJson(response);
-
-        if (!response.ok) {
-            throw new Error(data.detail || 'Upload failed');
-        }
-
-        pathInput.value = '';
-        setStatus(data.status || 'File uploaded and processed successfully.', 'success');
-        await refreshDatabaseState();
-    } catch (error) {
-        setStatus(error.message, 'error');
-        console.error('Upload failed:', error);
-    } finally {
-        setLoading(uploadLoading, false);
-    }
-});
-
 async function queryRequest() {
     const question = questionInput.value.trim();
 
@@ -211,7 +170,7 @@ restartButton.addEventListener('click', async () => {
             throw new Error(data.detail || 'Clear database failed');
         }
 
-        pathInput.value = '';
+        fileInput.value = '';
         questionInput.value = '';
         answerContent.replaceChildren();
         setStatus(data.status || 'Database cleared successfully.', 'success');

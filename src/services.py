@@ -45,15 +45,13 @@ class UploadService:
         self.db = db or get_vector_db()
 
     def insert_documents(self):
-        if not self.parser:
-            print("No document parser initialized. Please provide a valid file path.")
-            return
-
-        cleaned_docs = self.parser.clean_documents()
+        try:
+            cleaned_docs = self.parser.clean_documents()
+        except Exception as exc:
+            raise ValueError("The PDF could not be parsed.") from exc
 
         if not cleaned_docs:
-            print("No content to process after cleaning.")
-            return
+            return False
 
         content = self.parser.split_documents()
         texts = [doc.page_content for doc in content]
@@ -68,6 +66,7 @@ class UploadService:
         print(f"Inserting {len(data_to_insert)} documents into the vector database.")
 
         self.db.insert_documents(data_to_insert)
+        return True
 
 
 class LLMService:

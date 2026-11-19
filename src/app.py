@@ -1,6 +1,7 @@
 from services import UploadService, LLMService, DBService, build_llm
 from embedding_engine import get_embedding_engine
 
+import tempfile
 from pathlib import Path
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -35,48 +36,55 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class PDFRequest(BaseModel):
-    file_path: str
-
-
 class QueryRequest(BaseModel):
     question: str
 
 
+MAX_UPLOAD_SIZE = 20 * 1024 * 1024
+PDF_SIGNATURE = b"%PDF-"
+UPLOAD_CHUNK_SIZE = 1024 * 1024
+
+
 @app.post("/upload-file/")
-def upload_file(file: UploadFile):
-    print("Received file:", file.filename)
+def upload_file(file: UploadFile | None = None):
+    if file is None or not file.filename:
+        raise HTTPException(status_code=400, detail="A PDF file is required.")
+    if Path(file.filename).suffix.lower() != ".pdf":
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     if file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+        raise HTTPException(status_code=400, detail="The uploaded file must have MIME type application/pdf.")
 
-    temp_file_path = Path(f"/tmp/{file.filename}")
-    with temp_file_path.open("wb") as buffer:
-        buffer.write(file.file.read())
+    temp_file_path = None
+    total_size = 0
+    signature = b""
+    try:
+        with tempfile.NamedTemporaryFile(prefix="localrag-", suffix=".pdf", delete=False) as temp_file:
+            temp_file_path = Path(temp_file.name)
+            while True:
+                chunk = file.file.read(UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > MAX_UPLOAD_SIZE:
+                    raise HTTPException(status_code=413, detail="PDF exceeds the 20 MiB upload limit.")
+                if len(signature) < len(PDF_SIGNATURE):
+                    signature += chunk[:len(PDF_SIGNATURE) - len(signature)]
+                temp_file.write(chunk)
 
-    service = UploadService(
-        str(temp_file_path),
-        engine=get_embedding_engine(),
-    )
-    service.insert_documents()
-    temp_file_path.unlink()
-    return {"status": "Documents inserted into the vector database."}
+        if total_size == 0:
+            raise HTTPException(status_code=400, detail="The uploaded PDF is empty.")
+        if not signature.startswith(PDF_SIGNATURE):
+            raise HTTPException(status_code=400, detail="The uploaded file does not have a valid PDF signature.")
 
-
-@app.post("/upload/")
-def upload_document(request: PDFRequest):
-    file_path = Path((request.file_path)).expanduser().resolve()
-    if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=400, detail="File does not exist.")
-
-    if not file_path.suffix.lower() == ".pdf":
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
-
-    service = UploadService(
-        str(file_path),
-        engine=get_embedding_engine(),
-    )
-    service.insert_documents()
-    return {"status": "Documents inserted into the vector database."}
+        service = UploadService(str(temp_file_path), engine=get_embedding_engine())
+        inserted = service.insert_documents()
+        if inserted is False:
+            raise HTTPException(status_code=400, detail="The PDF contains no processable text.")
+        return {"status": "Documents inserted into the vector database."}
+    finally:
+        if temp_file_path is not None:
+            temp_file_path.unlink(missing_ok=True)
+        file.file.close()
 
 
 @app.post("/query/")

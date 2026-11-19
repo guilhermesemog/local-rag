@@ -95,8 +95,8 @@ directly with `file://`, since browsers treat that page as `origin: null`.
 You can interact with the API through the automatic documentation (Swagger UI) at `http://localhost:8000/docs`.
 
 1.  **PDF Upload**:
-    *   Use the `POST /upload/` endpoint to upload a file path.
-    *   Use the `POST /upload-file/` endpoint to upload a PDF file.
+    *   Use the `POST /upload-file/` endpoint with a multipart `file` field to upload a PDF file (maximum size: 20 MiB).
+    *   The endpoint requires a `.pdf` filename, `application/pdf` MIME type, and a valid `%PDF-` signature. Invalid files return HTTP 400; files over the limit return HTTP 413.
 
 2.  **Ask Questions**:
     *   Use `POST /query/` with `{"question": "Your question here"}`.
