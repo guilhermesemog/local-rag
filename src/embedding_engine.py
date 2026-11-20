@@ -6,6 +6,7 @@ from errors import EmbeddingError
 
 logger = logging.getLogger(__name__)
 
+
 class EmbeddingEngine:
     def __init__(self, model_name: str = "all-MiniLM-L6-v2", device: str | None = None):
         self.model_name = model_name
@@ -25,9 +26,11 @@ class EmbeddingEngine:
                 batch_size=32,
                 normalize_embeddings=True,
             )
-        
+
             if embeddings.shape[1] != 384:
-                raise ValueError(f"Unexpected embedding dimension: {embeddings.shape[1]}")
+                raise ValueError(
+                    f"Unexpected embedding dimension: {embeddings.shape[1]}"
+                )
 
         except Exception as e:
             logger.exception("Embedding generation failed")

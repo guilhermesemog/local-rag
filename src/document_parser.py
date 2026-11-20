@@ -1,12 +1,24 @@
 import re
+from pathlib import Path
+from uuid import uuid4
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 
 
 class DocumentParser:
     def __init__(self, file_path):
+        self.file_path = Path(file_path)
+        self.document_id = str(uuid4())
         self._loader = PyPDFLoader(file_path)
         self._document = self._loader.load()
+        for page in self._document:
+            page.metadata.update(
+                {
+                    "document_id": self.document_id,
+                    "document_name": self.file_path.name,
+                    "page": int(page.metadata.get("page", 0)) + 1,
+                }
+            )
 
     def clean_documents(self, overwrite: bool = True):
         cleaned_docs = []
@@ -28,7 +40,8 @@ class DocumentParser:
         )
 
         split_docs = text_splitter.split_documents(self._document)
-        print(f"Split into {len(split_docs)} chunks.")
+        for chunk_number, doc in enumerate(split_docs, start=1):
+            doc.metadata["chunk"] = chunk_number
         return split_docs
 
     @property

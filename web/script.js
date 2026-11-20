@@ -135,7 +135,29 @@ async function queryRequest() {
         const paragraph = document.createElement('p');
         paragraph.textContent = String(data.results ?? 'No answer was returned.');
 
-        answerContent.replaceChildren(title, paragraph);
+        const sourceList = document.createElement('ul');
+        for (const source of data.sources ?? []) {
+            const item = document.createElement('li');
+            const label = document.createElement('strong');
+            const page = source.page ? `, page ${source.page}` : '';
+            label.textContent = `${source.document_name || 'Unknown document'}${page}`;
+            item.append(label);
+
+            if (source.text) {
+                const excerpt = document.createElement('p');
+                excerpt.textContent = source.text;
+                item.append(excerpt);
+            }
+            sourceList.append(item);
+        }
+
+        const sourcesHeading = document.createElement('h4');
+        sourcesHeading.textContent = 'Sources';
+        answerContent.replaceChildren(
+            title,
+            paragraph,
+            ...(sourceList.childElementCount ? [sourcesHeading, sourceList] : []),
+        );
         questionInput.value = '';
     } catch (error) {
         setStatus(error.message, 'error');

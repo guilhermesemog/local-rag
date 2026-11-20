@@ -1,8 +1,28 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+import json
+from typing import Any
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    content: str
+    metadata: dict[str, Any]
+    similarity: float
+
+    def __post_init__(self):
+        metadata = self.metadata
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                metadata = {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        object.__setattr__(self, "metadata", metadata)
 
 
 class VectorDB(ABC):
-
     @abstractmethod
     def create_table(self):
         pass

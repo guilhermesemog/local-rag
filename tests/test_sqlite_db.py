@@ -1,8 +1,15 @@
 def test_sqlite_insert_search_clear(sqlite_db, fake_embeddings):
-    sqlite_db.insert_documents([("hello", {}, fake_embeddings[0])])
+    metadata = {
+        "document_id": "doc-1",
+        "document_name": "sample.pdf",
+        "page": 2,
+        "chunk": 1,
+    }
+    sqlite_db.insert_documents([("hello", metadata, fake_embeddings[0])])
     assert sqlite_db.is_empty() is False
     results = sqlite_db.search(fake_embeddings[0], limit=1)
-    assert results[0][1] == "hello"
+    assert results[0].content == "hello"
+    assert results[0].metadata == metadata
     sqlite_db.delete_all_documents()
     assert sqlite_db.is_empty() is True
 

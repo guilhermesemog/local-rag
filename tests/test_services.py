@@ -3,6 +3,7 @@ import pytest
 from errors import EmptyDocumentError, LLMProviderError
 from llm.dummy import DummyLLM
 from services import LLMService
+from db.vector_db import SearchResult
 
 
 class FakeDB:
@@ -13,7 +14,9 @@ class FakeDB:
         return self.empty
 
     def search(self, *_args, **_kwargs):
-        return [(1, "context", {}, 1.0)]
+        return [
+            SearchResult("context", {"document_name": "sample.pdf", "page": 2}, 1.0)
+        ]
 
 
 class FakeEngine:
@@ -28,7 +31,14 @@ def test_llm_service_empty_db():
 
 def test_llm_service_answers_with_context():
     result = LLMService(DummyLLM(), FakeEngine(), FakeDB()).answer("question")
-    assert result == "This is a dummy response."
+    assert result["results"] == "This is a dummy response."
+    assert result["sources"][0]["document_name"] == "sample.pdf"
+    assert result["sources"][0]["page"] == 2
+
+
+def test_search_result_normalizes_json_string_metadata():
+    result = SearchResult("context", '{"document_name": "old.pdf", "page": 1}', 0.9)
+    assert result.metadata == {"document_name": "old.pdf", "page": 1}
 
 
 def test_llm_provider_failure_is_mapped():

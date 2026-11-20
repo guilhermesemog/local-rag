@@ -356,7 +356,7 @@ Permitir que o usuário saiba quais documentos e páginas foram utilizados em um
 
 ## Critério de conclusão
 
-Uma resposta pode ser rastreada até o conteúdo e página utilizados.
+Uma resposta pode ser rastreada até o conteúdo e página utilizados. Implementação e testes automatizados e manuais validados pelo usuário em 2026-11-20. Registros anteriores sem metadados permanecem consultáveis, mas não têm fonte identificável.
 
 ---
 

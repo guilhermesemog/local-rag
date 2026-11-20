@@ -1,10 +1,11 @@
 import os
+import json
 from dotenv import load_dotenv
 
 import psycopg2
-from psycopg2.extras import execute_values
+from psycopg2.extras import Json, execute_values
 
-from db.vector_db import VectorDB
+from db.vector_db import SearchResult, VectorDB
 
 
 class PostgresVectorDB(VectorDB):
@@ -17,7 +18,13 @@ class PostgresVectorDB(VectorDB):
             db_host = os.getenv("DB_HOST", "localhost")
             db_port = os.getenv("DB_PORT", "5433")
 
-            self.conn = psycopg2.connect(dbname=db_name, user=db_user, password=db_password, host=db_host, port=db_port)
+            self.conn = psycopg2.connect(
+                dbname=db_name,
+                user=db_user,
+                password=db_password,
+                host=db_host,
+                port=db_port,
+            )
             self.conn.autocommit = False
             self.create_table()
 
@@ -49,7 +56,17 @@ class PostgresVectorDB(VectorDB):
         """
 
         with self.conn.cursor() as cursor:
-            execute_values(cursor, insert_query, data)
+            rows = [
+                (
+                    content,
+                    Json(
+                        json.loads(metadata) if isinstance(metadata, str) else metadata
+                    ),
+                    embedding,
+                )
+                for content, metadata, embedding in data
+            ]
+            execute_values(cursor, insert_query, rows)
             self.conn.commit()
 
     def search(self, query_vector: list[float], limit: int = 5) -> list[tuple]:
@@ -69,7 +86,12 @@ class PostgresVectorDB(VectorDB):
         with self.conn.cursor() as cursor:
             cursor.execute(search_query, (query_vector, query_vector, limit))
             rows = cursor.fetchall()
-            return rows
+            return [
+                SearchResult(
+                    content=row[1], metadata=row[2] or {}, similarity=float(row[3])
+                )
+                for row in rows
+            ]
 
     def delete_all_documents(self):
         delete_query = "TRUNCATE TABLE embeddings.documents RESTART IDENTITY;"

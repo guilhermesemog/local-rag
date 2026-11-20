@@ -22,6 +22,7 @@ from errors import (
 
 logger = logging.getLogger(__name__)
 
+
 def build_llm(model_type: str | None = None, **kwargs) -> LLM:
     model_type = model_type or os.getenv("LLM_MODEL", "dummy")
 
@@ -32,21 +33,30 @@ def build_llm(model_type: str | None = None, **kwargs) -> LLM:
         return GeminiLLM(model_name=model_name)
     elif model_type == "ollama":
         model_name = kwargs.get("model_name") or os.getenv("OLLAMA_MODEL", "llama3")
-        base_url = kwargs.get("base_url") or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        temperature = float(kwargs.get("temperature", os.getenv("OLLAMA_TEMPERATURE", "0.7")))
-        return OllamaLLM(model_name=model_name, base_url=base_url, temperature=temperature)
+        base_url = kwargs.get("base_url") or os.getenv(
+            "OLLAMA_BASE_URL", "http://localhost:11434"
+        )
+        temperature = float(
+            kwargs.get("temperature", os.getenv("OLLAMA_TEMPERATURE", "0.7"))
+        )
+        return OllamaLLM(
+            model_name=model_name, base_url=base_url, temperature=temperature
+        )
     elif model_type == "dummy":
         return DummyLLM()
     elif model_type in ("transformers", "hugging-face"):
         model_name = kwargs.get("model_name") or os.getenv("TRANSFORMERS_MODEL")
         if not model_name:
-            raise ValueError("TRANSFORMERS_MODEL must be configured when LLM_MODEL=transformers")
+            raise ValueError(
+                "TRANSFORMERS_MODEL must be configured when LLM_MODEL=transformers"
+            )
         return TransformersLLM(model_name=model_name)
     else:
         return TransformersLLM(model_name=kwargs.get("model_name", model_type))
 
+
 class UploadService:
-    def __init__(self, file_path: str, db = None, engine = None):
+    def __init__(self, file_path: str, db=None, engine=None):
         self.file_path = file_path
         self.parser = DocumentParser(file_path)
         self.engine = engine or EmbeddingEngine()
@@ -77,7 +87,14 @@ class UploadService:
 
         data_to_insert = []
         for i, doc in enumerate(content):
-            data_to_insert.append((doc.page_content, json.dumps({}), embeddings[i]))
+            metadata = {
+                key: doc.metadata[key]
+                for key in ("document_id", "document_name", "page", "chunk")
+                if key in doc.metadata
+            }
+            data_to_insert.append(
+                (doc.page_content, json.dumps(metadata), embeddings[i])
+            )
 
         try:
             self.db.insert_documents(data_to_insert)
@@ -88,11 +105,13 @@ class UploadService:
 
 
 class LLMService:
-    def __init__(self, llm: LLM, embedding_engine: EmbeddingEngine | None = None, db = None):
+    def __init__(
+        self, llm: LLM, embedding_engine: EmbeddingEngine | None = None, db=None
+    ):
         self.llm = llm
         self.db = db or get_vector_db()
         self.engine = embedding_engine or EmbeddingEngine()
-        
+
     def _query(self, query, top_k=5):
         query_embedding = self.engine.generate_embeddings([query])[0]
         try:
@@ -112,7 +131,7 @@ class LLMService:
             raise DatabaseError() from exc
 
         similar_docs = self._query(question, top_k=6)
-        context = "\n".join([doc[1] for doc in similar_docs])
+        context = "\n".join([doc.content for doc in similar_docs])
 
         prompt = chat_template.format(context=context, question=question)
         try:
@@ -121,11 +140,22 @@ class LLMService:
             logger.exception("Language model generation failed")
             raise LLMProviderError() from exc
 
-        return response
+        sources = [
+            {
+                "document_id": doc.metadata.get("document_id"),
+                "document_name": doc.metadata.get("document_name"),
+                "page": doc.metadata.get("page"),
+                "chunk": doc.metadata.get("chunk"),
+                "text": doc.content,
+                "similarity": doc.similarity,
+            }
+            for doc in similar_docs
+        ]
+        return {"results": response, "sources": sources}
 
 
 class DBService:
-    def __init__(self, db = None):
+    def __init__(self, db=None):
         self.db = db or get_vector_db()
 
     def check_empty(self) -> bool:
@@ -134,7 +164,7 @@ class DBService:
         except Exception as exc:
             logger.exception("Vector database status check failed")
             raise DatabaseError() from exc
-        
+
     def clear_database(self):
         try:
             self.db.delete_all_documents()

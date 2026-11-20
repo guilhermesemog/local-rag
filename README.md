@@ -106,6 +106,7 @@ You can interact with the API through the automatic documentation (Swagger UI) a
 
 2.  **Ask Questions**:
     *   Use `POST /query/` with `{"question": "Your question here"}`.
+    *   Successful responses include `results` (answer text) and `sources` (document name, page, chunk, excerpt, and similarity for each retrieved passage).
 
 3. **Changing Models**
     *   Change the .env `LLM_MODEL` variable to change the provider in use. Available now: [`gemini`, `ollama`, `hugging-face-model-id`].

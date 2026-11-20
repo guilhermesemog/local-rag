@@ -54,7 +54,7 @@ class TransformersLLM(LLM):
             eos_token_id=self.tokenizer.eos_token_id,
         )
 
-        generated = output[0][inputs["input_ids"].shape[-1]:]
+        generated = output[0][inputs["input_ids"].shape[-1] :]
         text = self.tokenizer.decode(generated, skip_special_tokens=True)
 
         return text.strip()

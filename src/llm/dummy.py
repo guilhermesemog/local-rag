@@ -1,5 +1,6 @@
 from llm import base
 
+
 class DummyLLM(base.LLM):
     def __init__(self, model_name: str = "dummy-model"):
         super().__init__(model_name)

@@ -1,6 +1,7 @@
 import sqlite3
 import numpy as np
 import json
+from db.vector_db import SearchResult
 from typing import List, Tuple
 
 
@@ -33,7 +34,9 @@ class SQLiteVectorDB:
             for row_id, embedding_blob in rows:
                 if embedding_blob:
                     self.ids.append(row_id)
-                    self.embeddings.append(np.frombuffer(embedding_blob, dtype=np.float32))
+                    self.embeddings.append(
+                        np.frombuffer(embedding_blob, dtype=np.float32)
+                    )
         except sqlite3.OperationalError:
             pass
 
@@ -49,7 +52,7 @@ class SQLiteVectorDB:
                 "INSERT INTO documents (content, metadata, embedding) VALUES (?, ?, ?)",
                 (content, json.dumps(metadata), emb_array.tobytes()),
             )
-            
+
             if cursor.lastrowid is not None:
                 self.ids.append(cursor.lastrowid)
 
@@ -87,7 +90,11 @@ class SQLiteVectorDB:
 
             if row:
                 results.append(
-                    (row[0], row[1], json.loads(row[2]), float(similarities[idx]))
+                    SearchResult(
+                        content=row[1],
+                        metadata=json.loads(row[2] or "{}"),
+                        similarity=float(similarities[idx]),
+                    )
                 )
 
         return results
