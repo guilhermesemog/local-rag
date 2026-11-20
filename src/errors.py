@@ -11,6 +11,13 @@ class DocumentParseError(AppError):
     public_message = "The PDF could not be processed."
 
 
+class OCRUnavailableError(AppError):
+    status_code = 503
+    public_message = (
+        "OCR is enabled, but its Python or system dependencies are unavailable."
+    )
+
+
 class EmptyDocumentError(AppError):
     status_code = 400
     public_message = "The PDF contains no processable text."

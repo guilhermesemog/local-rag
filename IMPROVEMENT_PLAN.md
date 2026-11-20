@@ -398,7 +398,7 @@ Melhorar a qualidade do conteúdo recuperado sem mudar o modelo de vetorização
 
 ## Critério de conclusão
 
-O parsing produz chunks legíveis, sem conteúdo vazio ou excessivamente fragmentado.
+O parsing produz chunks legíveis, sem conteúdo vazio ou excessivamente fragmentado. Testes automatizados e validação manual de PDFs com texto e OCR confirmados pelo usuário em 2026-11-20.
 
 ---
 

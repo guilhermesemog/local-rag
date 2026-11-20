@@ -22,4 +22,22 @@ def test_parser_cleans_whitespace():
         Document(page_content="  "),
     ]
     cleaned = parser.clean_documents()
-    assert [doc.page_content for doc in cleaned] == ["hello world"]
+    assert [doc.page_content for doc in cleaned] == ["hello\nworld"]
+
+
+def test_cleaning_preserves_table_columns():
+    parser = DocumentParser.__new__(DocumentParser)
+    parser._document = [Document(page_content="Name   Count\nItem A   3")]
+    cleaned = parser.clean_documents()
+    assert cleaned[0].page_content == "Name Count\nItem A 3"
+
+
+def test_chunk_configuration_rejects_invalid_overlap(monkeypatch):
+    parser = DocumentParser.__new__(DocumentParser)
+    parser._document = []
+    monkeypatch.setenv("CHUNK_SIZE", "100")
+    monkeypatch.setenv("CHUNK_OVERLAP", "100")
+    import pytest
+
+    with pytest.raises(ValueError, match="overlap"):
+        parser.split_documents()

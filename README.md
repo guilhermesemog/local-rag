@@ -108,6 +108,10 @@ You can interact with the API through the automatic documentation (Swagger UI) a
     *   Use `POST /query/` with `{"question": "Your question here"}`.
     *   Successful responses include `results` (answer text) and `sources` (document name, page, chunk, excerpt, and similarity for each retrieved passage).
 
+### PDF parsing and OCR
+
+Chunking is configured with `CHUNK_SIZE` and `CHUNK_OVERLAP` (defaults: 1000 and 200 characters). Text extraction keeps pages separate, preserves line boundaries, and drops empty or repeated chunks within a page. Scanned pages are reported as having no processable text unless OCR is enabled. To enable OCR, install `requirements-ocr.txt`, install the Tesseract system executable and the language data selected by `OCR_LANG`, then set `OCR_ENABLED=true`. OCR defaults to disabled. Each stored source records whether it was extracted from PDF text or OCR.
+
 3. **Changing Models**
     *   Change the .env `LLM_MODEL` variable to change the provider in use. Available now: [`gemini`, `ollama`, `hugging-face-model-id`].
     *   For Gemini, configure `GEMINI_MODEL`.

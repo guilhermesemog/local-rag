@@ -14,6 +14,7 @@ from llm.dummy import DummyLLM
 from llm.transformers import TransformersLLM
 from llm.base import LLM
 from errors import (
+    AppError,
     DatabaseError,
     DocumentParseError,
     EmptyDocumentError,
@@ -68,7 +69,7 @@ class UploadService:
                 raise DocumentParseError()
             cleaned_docs = self.parser.clean_documents()
         except Exception as exc:
-            if isinstance(exc, DocumentParseError):
+            if isinstance(exc, AppError):
                 raise
             logger.exception("PDF parsing failed")
             raise DocumentParseError() from exc
@@ -89,7 +90,13 @@ class UploadService:
         for i, doc in enumerate(content):
             metadata = {
                 key: doc.metadata[key]
-                for key in ("document_id", "document_name", "page", "chunk")
+                for key in (
+                    "document_id",
+                    "document_name",
+                    "page",
+                    "chunk",
+                    "extraction_method",
+                )
                 if key in doc.metadata
             }
             data_to_insert.append(
