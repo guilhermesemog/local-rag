@@ -45,12 +45,17 @@ def postgres_db():
 @pytest.fixture
 def api_client(monkeypatch, sqlite_db):
     from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("LLM_MODEL", "dummy")
     import app
     from llm.dummy import DummyLLM
 
     monkeypatch.setattr(app, "llm", DummyLLM())
 
     class FakeEmbeddingEngine:
+        model_name = "test-embedding"
+        dimension = 384
+
         def generate_embeddings(self, _texts):
             return [[1.0] * 384]
 

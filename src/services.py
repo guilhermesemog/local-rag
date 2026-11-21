@@ -8,10 +8,6 @@ from document_parser import DocumentParser
 
 from templates import chat_template
 
-from llm.gemini import GeminiLLM
-from llm.ollama import OllamaLLM
-from llm.dummy import DummyLLM
-from llm.transformers import TransformersLLM
 from llm.base import LLM
 from errors import (
     AppError,
@@ -28,11 +24,15 @@ def build_llm(model_type: str | None = None, **kwargs) -> LLM:
     model_type = model_type or os.getenv("LLM_MODEL", "dummy")
 
     if model_type == "gemini":
+        from llm.gemini import GeminiLLM
+
         model_name = kwargs.get("model_name") or os.getenv("GEMINI_MODEL")
         if not model_name:
             raise ValueError("GEMINI_MODEL must be configured when LLM_MODEL=gemini")
         return GeminiLLM(model_name=model_name)
     elif model_type == "ollama":
+        from llm.ollama import OllamaLLM
+
         model_name = kwargs.get("model_name") or os.getenv("OLLAMA_MODEL", "llama3")
         base_url = kwargs.get("base_url") or os.getenv(
             "OLLAMA_BASE_URL", "http://localhost:11434"
@@ -44,8 +44,12 @@ def build_llm(model_type: str | None = None, **kwargs) -> LLM:
             model_name=model_name, base_url=base_url, temperature=temperature
         )
     elif model_type == "dummy":
+        from llm.dummy import DummyLLM
+
         return DummyLLM()
     elif model_type in ("transformers", "hugging-face"):
+        from llm.transformers import TransformersLLM
+
         model_name = kwargs.get("model_name") or os.getenv("TRANSFORMERS_MODEL")
         if not model_name:
             raise ValueError(
@@ -53,6 +57,8 @@ def build_llm(model_type: str | None = None, **kwargs) -> LLM:
             )
         return TransformersLLM(model_name=model_name)
     else:
+        from llm.transformers import TransformersLLM
+
         return TransformersLLM(model_name=kwargs.get("model_name", model_type))
 
 
@@ -64,6 +70,7 @@ class UploadService:
         self.db = db or get_vector_db()
 
     def insert_documents(self):
+        self.db.ensure_embedding_identity(self.engine.model_name, self.engine.dimension)
         try:
             if self.parser is None:
                 raise DocumentParseError()
@@ -128,6 +135,7 @@ class LLMService:
             raise DatabaseError() from exc
 
     def answer(self, question: str):
+        self.db.ensure_embedding_identity(self.engine.model_name, self.engine.dimension)
         try:
             if self.db.is_empty():
                 raise EmptyDocumentError()

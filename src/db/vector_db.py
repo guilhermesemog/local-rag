@@ -24,21 +24,30 @@ class SearchResult:
 
 class VectorDB(ABC):
     @abstractmethod
+    def ensure_embedding_identity(self, model_name: str, dimension: int):
+        """Validate or initialize the embedding identity for this index."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def validate_vector_dimension(self, vector: list[float]):
+        raise NotImplementedError
+
+    @abstractmethod
+    def close(self):
+        raise NotImplementedError
+
+    @abstractmethod
     def create_table(self):
         pass
 
     @abstractmethod
     def insert_documents(self, data: list[tuple]):
+        """Atomically persist (content, metadata, embedding) rows."""
         pass
 
     @abstractmethod
-    def search(self, query_vector: list[float], limit: int) -> list[tuple]:
-        """
-        - Row[0]: id
-        - Row[1]: content
-        - Row[2]: metadata
-        - Row[3]: similarity
-        """
+    def search(self, query_vector: list[float], limit: int) -> list[SearchResult]:
+        """Return matches using the shared SearchResult contract."""
         pass
 
     @abstractmethod
@@ -47,8 +56,4 @@ class VectorDB(ABC):
 
     @abstractmethod
     def is_empty(self) -> bool:
-        pass
-
-    @abstractmethod
-    def close(self):
         pass

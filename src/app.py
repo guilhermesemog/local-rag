@@ -4,12 +4,14 @@ from embedding_engine import get_embedding_engine
 import tempfile
 import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from errors import AppError
+from db.factory_db import close_vector_db
 
 from dotenv import load_dotenv
 
@@ -20,7 +22,14 @@ logger = logging.getLogger(__name__)
 
 llm = build_llm()
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(_app):
+    yield
+    close_vector_db()
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.exception_handler(AppError)

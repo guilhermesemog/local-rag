@@ -1,113 +1,143 @@
-import sqlite3
-import numpy as np
 import json
-from db.vector_db import SearchResult
-from typing import List, Tuple
+import sqlite3
+import threading
+from pathlib import Path
+
+import numpy as np
+
+from db.vector_db import SearchResult, VectorDB
+from errors import IndexCompatibilityError
+
+MIGRATION_DIR = Path(__file__).parent / "migrations" / "sqlite"
 
 
-class SQLiteVectorDB:
-    def __init__(self, db_path: str = "sqlite.db"):
-        # FastAPI's sync endpoints run in a worker thread; allow the shared
-        # connection to be used by that thread for request handling.
+class SQLiteVectorDB(VectorDB):
+    def __init__(self, db_path: str = "sqlite.db", dimension: int = 384):
+        self.dimension = dimension
+        self.lock = threading.RLock()
         self.conn = sqlite3.connect(db_path or ":memory:", check_same_thread=False)
-        self.embeddings: List[np.ndarray] = []
-        self.ids: List[int] = []
+        self.conn.execute("PRAGMA foreign_keys = ON")
         self.create_table()
-        self.load_existing_data()
 
     def create_table(self):
-        query = """
-        CREATE TABLE IF NOT EXISTS documents (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            content TEXT NOT NULL,
-            metadata TEXT DEFAULT '{}',
-            embedding BLOB
-        );
-        """
-        self.conn.execute(query)
-        self.conn.commit()
-
-    def load_existing_data(self):
-        try:
-            cursor = self.conn.execute("SELECT id, embedding FROM documents")
-            rows = cursor.fetchall()
-            for row_id, embedding_blob in rows:
-                if embedding_blob:
-                    self.ids.append(row_id)
-                    self.embeddings.append(
-                        np.frombuffer(embedding_blob, dtype=np.float32)
-                    )
-        except sqlite3.OperationalError:
-            pass
-
-    def insert_documents(self, data: List[Tuple[str, dict, list]]):
-        """
-        data: [(content, metadata, embedding)]
-        """
-        cursor = self.conn.cursor()
-
-        for content, metadata, embedding in data:
-            emb_array = np.array(embedding, dtype=np.float32)
-            cursor.execute(
-                "INSERT INTO documents (content, metadata, embedding) VALUES (?, ?, ?)",
-                (content, json.dumps(metadata), emb_array.tobytes()),
+        with self.lock:
+            self.conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations "
+                "(version TEXT PRIMARY KEY, applied_at TEXT DEFAULT CURRENT_TIMESTAMP)"
             )
+            self.conn.execute(
+                "CREATE TABLE IF NOT EXISTS index_metadata "
+                "(id INTEGER PRIMARY KEY CHECK (id = 1), model_name TEXT, dimension INTEGER)"
+            )
+            for migration in sorted(MIGRATION_DIR.glob("*.sql")):
+                version = migration.stem
+                applied = self.conn.execute(
+                    "SELECT 1 FROM schema_migrations WHERE version = ?", (version,)
+                ).fetchone()
+                if not applied:
+                    try:
+                        script = migration.read_text()
+                        self.conn.executescript("BEGIN;\n" + script)
+                        self.conn.execute(
+                            "INSERT INTO schema_migrations(version) VALUES (?)",
+                            (version,),
+                        )
+                        self.conn.commit()
+                    except Exception:
+                        self.conn.rollback()
+                        raise
 
-            if cursor.lastrowid is not None:
-                self.ids.append(cursor.lastrowid)
-
-            self.embeddings.append(emb_array)
-
-        self.conn.commit()
-
-    def search(self, query_vector: List[float], limit: int = 5) -> list[tuple]:
-        """
-        - Row[0]: id
-        - Row[1]: content
-        - Row[2]: metadata
-        - Row[3]: similarity
-        """
-        if not self.embeddings:
-            return []
-
-        query = np.array(query_vector, dtype=np.float32)
-
-        similarities = np.array(
-            [
-                np.dot(query, emb) / (np.linalg.norm(query) * np.linalg.norm(emb))
-                for emb in self.embeddings
-            ]
-        )
-
-        top_k_idx = similarities.argsort()[-limit:][::-1]
-
-        results = []
-        for idx in top_k_idx:
-            doc_id = self.ids[idx]
+    def ensure_embedding_identity(self, model_name: str, dimension: int):
+        if dimension != self.dimension:
+            raise IndexCompatibilityError()
+        with self.lock:
             row = self.conn.execute(
-                "SELECT id, content, metadata FROM documents WHERE id = ?", (doc_id,)
+                "SELECT model_name, dimension FROM index_metadata WHERE id = 1"
             ).fetchone()
-
-            if row:
-                results.append(
-                    SearchResult(
-                        content=row[1],
-                        metadata=json.loads(row[2] or "{}"),
-                        similarity=float(similarities[idx]),
-                    )
+            count = self.conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+            if row is None:
+                if count:
+                    raise IndexCompatibilityError()
+                self.conn.execute(
+                    "INSERT INTO index_metadata(id, model_name, dimension) VALUES (1, ?, ?)",
+                    (model_name, dimension),
                 )
+                self.conn.commit()
+                return
+            if row != (model_name, dimension):
+                raise IndexCompatibilityError()
 
-        return results
+    def validate_vector_dimension(self, vector: list[float]):
+        if len(vector) != self.dimension:
+            raise IndexCompatibilityError()
+
+    def insert_documents(self, data: list[tuple]):
+        with self.lock:
+            try:
+                rows = []
+                for content, metadata, embedding in data:
+                    self.validate_vector_dimension(embedding)
+                    rows.append(
+                        (
+                            content,
+                            json.dumps(metadata)
+                            if not isinstance(metadata, str)
+                            else metadata,
+                            np.asarray(embedding, dtype=np.float32).tobytes(),
+                        )
+                    )
+                self.conn.executemany(
+                    "INSERT INTO documents(content, metadata, embedding) VALUES (?, ?, ?)",
+                    rows,
+                )
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+
+    def search(self, query_vector: list[float], limit: int = 5) -> list[SearchResult]:
+        self.validate_vector_dimension(query_vector)
+        query = np.asarray(query_vector, dtype=np.float32)
+        if not np.linalg.norm(query):
+            return []
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT content, metadata, embedding FROM documents WHERE embedding IS NOT NULL"
+            ).fetchall()
+        scored = []
+        for content, metadata, raw_embedding in rows:
+            embedding = np.frombuffer(raw_embedding, dtype=np.float32)
+            if embedding.size != self.dimension:
+                raise IndexCompatibilityError()
+            norm = np.linalg.norm(embedding)
+            similarity = (
+                float(np.dot(query, embedding) / (np.linalg.norm(query) * norm))
+                if norm
+                else 0.0
+            )
+            scored.append((similarity, content, metadata))
+        scored.sort(key=lambda row: row[0], reverse=True)
+        return [
+            SearchResult(content, json.loads(metadata or "{}"), score)
+            for score, content, metadata in scored[:limit]
+        ]
 
     def delete_all_documents(self):
-        self.conn.execute("DELETE FROM documents;")
-        self.conn.commit()
-        self.embeddings.clear()
-        self.ids.clear()
+        with self.lock:
+            try:
+                self.conn.execute("DELETE FROM documents")
+                self.conn.execute("DELETE FROM index_metadata")
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
 
     def is_empty(self) -> bool:
-        cursor = self.conn.execute("SELECT COUNT(*) FROM documents;")
-        return cursor.fetchone()[0] == 0
+        with self.lock:
+            return (
+                self.conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0] == 0
+            )
 
     def close(self):
-        self.conn.close()
+        with self.lock:
+            self.conn.close()

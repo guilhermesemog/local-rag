@@ -110,6 +110,10 @@ Run the unit and API tests with `pytest -q`. The suite uses temporary SQLite dat
 
 GitHub Actions runs focused Ruff checks and the automated tests on pull requests and pushes to `main`. The workflow installs the lightweight `requirements-ci.txt`; run `ruff check --select E4,E7,E9,F src tests`, `ruff format --check tests`, and `python -m pytest -q` locally to match CI. Formatting checks currently cover tests; formatting existing application code is deferred to avoid a broad unrelated diff.
 
+### Database and embedding index compatibility
+
+SQLite and PostgreSQL schemas are initialized through numbered SQL migrations without deleting existing documents. PostgreSQL uses a shared thread-safe pool configured by `POSTGRES_POOL_MIN` and `POSTGRES_POOL_MAX`. Configure `EMBEDDING_MODEL` and `EMBEDDING_DIMENSION` to match the embedding model. The index records both values and rejects queries or uploads if they change while vectors remain; clear the database and re-ingest documents to rebuild the index. Existing databases without recorded identity are preserved but require clearing and reindexing before vector search.
+
 You can interact with the API through the automatic documentation (Swagger UI) at `http://localhost:8000/docs`.
 
 1.  **PDF Upload**:
@@ -133,3 +137,7 @@ Chunking is configured with `CHUNK_SIZE` and `CHUNK_OVERLAP` (defaults: 1000 and
 
 3.  **Clear Database**:
     *   Use `DELETE /clear-database/` to remove all documents and embeddings.
+
+### Database and embedding index compatibility
+
+SQLite and PostgreSQL schemas are initialized through numbered SQL migrations without deleting existing documents. PostgreSQL uses a shared thread-safe pool configured by `POSTGRES_POOL_MIN` and `POSTGRES_POOL_MAX`. Configure `EMBEDDING_MODEL` and `EMBEDDING_DIMENSION` to match the embedding model. The index records both values and rejects queries or uploads if they change while vectors remain; clear the database and re-ingest documents to rebuild the index. Existing databases without recorded identity are preserved but require clearing and reindexing before vector search.

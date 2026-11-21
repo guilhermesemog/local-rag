@@ -1,115 +1,169 @@
-import os
 import json
-from dotenv import load_dotenv
+import os
+from contextlib import contextmanager
+from pathlib import Path
 
-import psycopg2
+from dotenv import load_dotenv
+from psycopg2 import pool
 from psycopg2.extras import Json, execute_values
 
 from db.vector_db import SearchResult, VectorDB
+from errors import IndexCompatibilityError
+
+MIGRATION_DIR = Path(__file__).parent / "migrations" / "postgres"
 
 
 class PostgresVectorDB(VectorDB):
-    def __init__(self):
+    def __init__(self, dimension: int = 384):
+        load_dotenv()
+        self.dimension = dimension
+        self.pool = pool.ThreadedConnectionPool(
+            int(os.getenv("POSTGRES_POOL_MIN", "1")),
+            int(os.getenv("POSTGRES_POOL_MAX", "8")),
+            dbname=os.getenv("DB_NAME", "semantic_search_db"),
+            user=os.getenv("DB_USER", "vector_admin"),
+            password=os.getenv("DB_PASSWORD", "vector_password"),
+            host=os.getenv("DB_HOST", "localhost"),
+            port=os.getenv("DB_PORT", "5433"),
+        )
         try:
-            load_dotenv()
-            db_name = os.getenv("DB_NAME", "semantic_search_db")
-            db_user = os.getenv("DB_USER", "vector_admin")
-            db_password = os.getenv("DB_PASSWORD", "vector_password")
-            db_host = os.getenv("DB_HOST", "localhost")
-            db_port = os.getenv("DB_PORT", "5433")
-
-            self.conn = psycopg2.connect(
-                dbname=db_name,
-                user=db_user,
-                password=db_password,
-                host=db_host,
-                port=db_port,
-            )
-            self.conn.autocommit = False
             self.create_table()
+        except Exception:
+            self.pool.closeall()
+            raise
 
-        except Exception as e:
-            raise Exception(f"Database connection failed: {e}")
+    @contextmanager
+    def _connection(self):
+        connection = self.pool.getconn()
+        try:
+            yield connection
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            self.pool.putconn(connection)
 
     def create_table(self):
-        create_table_query = """
-        CREATE TABLE IF NOT EXISTS embeddings.documents (
-            id BIGSERIAL PRIMARY KEY,
-            content TEXT NOT NULL,
-            metadata JSONB DEFAULT '{}',
-            embedding vector(384),
-            created_at TIMESTAMPTZ DEFAULT NOW()
-        );
-        CREATE INDEX IF NOT EXISTS document_embedding_idx
-        ON embeddings.documents
-        USING hnsw (embedding vector_cosine_ops);
-        """
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "CREATE SCHEMA IF NOT EXISTS embeddings;"
+                    "CREATE TABLE IF NOT EXISTS embeddings.schema_migrations "
+                    "(version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW());"
+                    "CREATE TABLE IF NOT EXISTS embeddings.index_metadata "
+                    "(id SMALLINT PRIMARY KEY CHECK(id = 1), model_name TEXT, dimension INTEGER);"
+                )
+                connection.commit()
+                for migration in sorted(MIGRATION_DIR.glob("*.sql")):
+                    version = migration.stem
+                    cursor.execute(
+                        "SELECT 1 FROM embeddings.schema_migrations WHERE version = %s",
+                        (version,),
+                    )
+                    if cursor.fetchone():
+                        continue
+                    sql = migration.read_text().replace(
+                        "${DIMENSION}", str(self.dimension)
+                    )
+                    try:
+                        cursor.execute(sql)
+                        cursor.execute(
+                            "INSERT INTO embeddings.schema_migrations(version) VALUES (%s)",
+                            (version,),
+                        )
+                        connection.commit()
+                    except Exception:
+                        connection.rollback()
+                        raise
 
-        with self.conn.cursor() as cursor:
-            cursor.execute(create_table_query)
-            self.conn.commit()
+    def ensure_embedding_identity(self, model_name: str, dimension: int):
+        if dimension != self.dimension:
+            raise IndexCompatibilityError()
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "LOCK TABLE embeddings.documents IN ACCESS EXCLUSIVE MODE"
+                )
+                cursor.execute(
+                    "SELECT model_name, dimension FROM embeddings.index_metadata WHERE id = 1"
+                )
+                row = cursor.fetchone()
+                cursor.execute("SELECT COUNT(*) FROM embeddings.documents")
+                count = cursor.fetchone()[0]
+                if row is None:
+                    if count:
+                        raise IndexCompatibilityError()
+                    cursor.execute(
+                        "ALTER TABLE embeddings.documents ALTER COLUMN embedding "
+                        f"TYPE vector({dimension}) USING embedding::vector({dimension})"
+                    )
+                    cursor.execute(
+                        "DROP INDEX IF EXISTS embeddings.document_embedding_idx"
+                    )
+                    cursor.execute(
+                        "CREATE INDEX document_embedding_idx ON embeddings.documents "
+                        "USING hnsw (embedding vector_cosine_ops)"
+                    )
+                    cursor.execute(
+                        "INSERT INTO embeddings.index_metadata(id, model_name, dimension) VALUES (1, %s, %s)",
+                        (model_name, dimension),
+                    )
+                    connection.commit()
+                    return
+                if row != (model_name, dimension):
+                    raise IndexCompatibilityError()
+                connection.rollback()
+
+    def validate_vector_dimension(self, vector: list[float]):
+        if len(vector) != self.dimension:
+            raise IndexCompatibilityError()
 
     def insert_documents(self, data: list[tuple]):
-        insert_query = """
-        INSERT INTO embeddings.documents (content, metadata, embedding)
-        VALUES %s
-        """
-
-        with self.conn.cursor() as cursor:
-            rows = [
-                (
-                    content,
-                    Json(
-                        json.loads(metadata) if isinstance(metadata, str) else metadata
-                    ),
-                    embedding,
+        rows = []
+        for content, metadata, embedding in data:
+            self.validate_vector_dimension(embedding)
+            parsed_metadata = (
+                json.loads(metadata) if isinstance(metadata, str) else metadata
+            )
+            rows.append((content, Json(parsed_metadata), embedding))
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                execute_values(
+                    cursor,
+                    "INSERT INTO embeddings.documents(content, metadata, embedding) VALUES %s",
+                    rows,
                 )
-                for content, metadata, embedding in data
-            ]
-            execute_values(cursor, insert_query, rows)
-            self.conn.commit()
+            connection.commit()
 
-    def search(self, query_vector: list[float], limit: int = 5) -> list[tuple]:
-        """
-        - Row[0]: id
-        - Row[1]: content
-        - Row[2]: metadata
-        - Row[3]: similarity
-        """
-        search_query = """
-        SELECT id, content, metadata, 1 - (embedding <=> %s::vector) AS similarity
-        FROM embeddings.documents
-        ORDER BY embedding <=> %s::vector
-        LIMIT %s;
-        """
-
-        with self.conn.cursor() as cursor:
-            cursor.execute(search_query, (query_vector, query_vector, limit))
-            rows = cursor.fetchall()
-            return [
-                SearchResult(
-                    content=row[1], metadata=row[2] or {}, similarity=float(row[3])
+    def search(self, query_vector: list[float], limit: int = 5) -> list[SearchResult]:
+        self.validate_vector_dimension(query_vector)
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT content, metadata, 1 - (embedding <=> %s::vector) "
+                    "FROM embeddings.documents ORDER BY embedding <=> %s::vector LIMIT %s",
+                    (query_vector, query_vector, limit),
                 )
-                for row in rows
-            ]
+                rows = cursor.fetchall()
+            connection.rollback()
+        return [SearchResult(row[0], row[1] or {}, float(row[2])) for row in rows]
 
     def delete_all_documents(self):
-        delete_query = "TRUNCATE TABLE embeddings.documents RESTART IDENTITY;"
-
-        with self.conn.cursor() as cursor:
-            cursor.execute(delete_query)
-            self.conn.commit()
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM embeddings.documents")
+                cursor.execute("DELETE FROM embeddings.index_metadata")
+            connection.commit()
 
     def is_empty(self) -> bool:
-        count_query = "SELECT COUNT(*) FROM embeddings.documents;"
-
-        with self.conn.cursor() as cursor:
-            cursor.execute(count_query)
-            result = cursor.fetchone()
-            if not result:
-                return True
-            return result[0] == 0
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT COUNT(*) FROM embeddings.documents")
+                empty = cursor.fetchone()[0] == 0
+            connection.rollback()
+            return empty
 
     def close(self):
-        if self.conn:
-            self.conn.close()
+        if self.pool:
+            self.pool.closeall()
+            self.pool = None

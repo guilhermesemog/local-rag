@@ -1,6 +1,6 @@
 import pytest
 
-from errors import EmptyDocumentError, LLMProviderError
+from errors import EmptyDocumentError, IndexCompatibilityError, LLMProviderError
 from llm.dummy import DummyLLM
 from services import LLMService
 from db.vector_db import SearchResult
@@ -13,6 +13,9 @@ class FakeDB:
     def is_empty(self):
         return self.empty
 
+    def ensure_embedding_identity(self, _model_name, _dimension):
+        return None
+
     def search(self, *_args, **_kwargs):
         return [
             SearchResult("context", {"document_name": "sample.pdf", "page": 2}, 1.0)
@@ -20,6 +23,9 @@ class FakeDB:
 
 
 class FakeEngine:
+    model_name = "test-embedding"
+    dimension = 384
+
     def generate_embeddings(self, _texts):
         return [[1.0] * 384]
 
@@ -34,6 +40,15 @@ def test_llm_service_answers_with_context():
     assert result["results"] == "This is a dummy response."
     assert result["sources"][0]["document_name"] == "sample.pdf"
     assert result["sources"][0]["page"] == 2
+
+
+def test_query_rejects_unknown_legacy_index():
+    class LegacyDB(FakeDB):
+        def ensure_embedding_identity(self, _model_name, _dimension):
+            raise IndexCompatibilityError()
+
+    with pytest.raises(IndexCompatibilityError):
+        LLMService(DummyLLM(), FakeEngine(), LegacyDB()).answer("question")
 
 
 def test_search_result_normalizes_json_string_metadata():

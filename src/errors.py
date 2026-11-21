@@ -33,6 +33,14 @@ class DatabaseError(AppError):
     public_message = "The vector database is unavailable."
 
 
+class IndexCompatibilityError(AppError):
+    status_code = 409
+    public_message = (
+        "The stored embedding index is incompatible or unidentified. "
+        "Clear the vector database and reindex documents with the configured model."
+    )
+
+
 class LLMProviderError(AppError):
     status_code = 502
     public_message = "The language model provider failed to generate a response."

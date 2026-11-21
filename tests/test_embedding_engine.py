@@ -16,11 +16,13 @@ class FakeModel:
 def test_embedding_engine_returns_vectors():
     engine = EmbeddingEngine.__new__(EmbeddingEngine)
     engine.model = FakeModel(np.ones((1, 384)))
+    engine.expected_dimension = 384
     assert engine.generate_embeddings(["text"]) == [[1.0] * 384]
 
 
 def test_embedding_engine_maps_model_failure():
     engine = EmbeddingEngine.__new__(EmbeddingEngine)
     engine.model = FakeModel(np.ones((1, 12)))
+    engine.expected_dimension = 384
     with pytest.raises(EmbeddingError):
         engine.generate_embeddings(["text"])

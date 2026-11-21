@@ -480,7 +480,7 @@ Tornar o acesso aos bancos mais previsível e adequado a uso prolongado.
 
 ## Critério de conclusão
 
-SQLite e PostgreSQL oferecem o mesmo comportamento funcional e persistência adequada.
+SQLite e PostgreSQL oferecem o mesmo comportamento funcional e persistência adequada. Testes automatizados e fluxos manuais nos dois backends confirmados pelo usuário em 2026-11-20. Bancos legados sem identidade de embeddings são preservados e exigem limpeza/reindexação antes de consultas.
 
 ---
 
