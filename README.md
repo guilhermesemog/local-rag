@@ -92,6 +92,18 @@ directly with `file://`, since browsers treat that page as `origin: null`.
 
 ## How to Use
 
+### RAG evaluation
+
+The reproducible benchmark uses `samples/sample.pdf`, an isolated temporary SQLite database, the configured embedding model, and the configured real LLM. Set `LLM_MODEL` to `gemini`, `ollama`, or `transformers` and configure its model settings before running; the dummy provider is rejected so it cannot produce misleading quality metrics.
+
+```bash
+python -m evaluation.run
+python -m evaluation.run --chunk-sizes 600 1000 --chunk-overlap 150
+python -m evaluation.run --embedding-models all-MiniLM-L6-v2 other-compatible-model
+```
+
+The command prints the report and writes `evaluation-report.json` by default (override with `--output`). It reports expected-page recall at `k=6`, evidence and answer term coverage, heuristic refusal detection, and indexing/query embedding, retrieval, and generation latency. Term coverage is a local diagnostic rather than a semantic or factuality guarantee; inspect the per-question answers, evidence and sources manually. The configured embedding model must produce 384-dimensional vectors for the current vector stores. Provider calls can consume local compute, API quota, or cost.
+
 ### Automated Tests
 
 Run the unit and API tests with `pytest -q`. The suite uses temporary SQLite databases and mocks external model calls. PostgreSQL integration tests are skipped by default; set `LOCAL_RAG_TEST_POSTGRES=1` and configure the database environment variables to run them against a dedicated test database.

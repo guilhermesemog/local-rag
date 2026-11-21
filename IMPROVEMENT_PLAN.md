@@ -438,7 +438,7 @@ Permitir demonstrar objetivamente a qualidade da solução e identificar regress
 
 ## Critério de conclusão
 
-É possível afirmar a qualidade do RAG com um conjunto verificável em vez de apenas uma demonstração informal.
+É possível afirmar a qualidade do RAG com um conjunto verificável em vez de apenas uma demonstração informal. Benchmark executado, respostas revisadas e configurações comparadas; validação manual e automatizada confirmada pelo usuário em 2026-11-20. A cobertura local por termos é indicativa e não substitui avaliação semântica.
 
 ---
 

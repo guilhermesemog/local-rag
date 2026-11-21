@@ -1,0 +1,27 @@
+[
+  {
+    "id": "sequential-recurrence",
+    "question": "Why are recurrent models difficult to parallelize during training?",
+    "expected_pages": [2],
+    "expected_terms": ["sequential", "parallelization", "hidden states"]
+  },
+  {
+    "id": "scaled-dot-product",
+    "question": "How is scaled dot-product attention computed?",
+    "expected_pages": [4],
+    "expected_terms": ["queries", "keys", "softmax", "sqrt|square root"]
+  },
+  {
+    "id": "transformer-heads",
+    "question": "How many parallel attention heads are used in the base model?",
+    "expected_pages": [5],
+    "expected_terms": ["8", "parallel", "attention"]
+  },
+  {
+    "id": "unsupported-favorite-color",
+    "question": "What is the favorite color of the first author?",
+    "expected_pages": [],
+    "expected_terms": [],
+    "expects_refusal": true
+  }
+]
