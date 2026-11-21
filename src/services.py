@@ -1,5 +1,4 @@
 import json
-import os
 import logging
 
 from db.factory_db import get_vector_db
@@ -16,57 +15,48 @@ from errors import (
     EmptyDocumentError,
     LLMProviderError,
 )
+from settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
 
-def build_llm(model_type: str | None = None, **kwargs) -> LLM:
-    model_type = model_type or os.getenv("LLM_MODEL", "dummy")
+def build_llm(settings: Settings | None = None) -> LLM:
+    settings = settings or get_settings()
 
-    if model_type == "gemini":
+    if settings.llm_model == "gemini":
         from llm.gemini import GeminiLLM
 
-        model_name = kwargs.get("model_name") or os.getenv("GEMINI_MODEL")
-        if not model_name:
-            raise ValueError("GEMINI_MODEL must be configured when LLM_MODEL=gemini")
-        return GeminiLLM(model_name=model_name)
-    elif model_type == "ollama":
+        return GeminiLLM(
+            model_name=settings.gemini_model,
+            api_key=settings.gemini_api_key.get_secret_value(),
+            request_timeout=settings.gemini_request_timeout,
+            retries=settings.gemini_retries,
+        )
+    if settings.llm_model == "ollama":
         from llm.ollama import OllamaLLM
 
-        model_name = kwargs.get("model_name") or os.getenv("OLLAMA_MODEL", "llama3")
-        base_url = kwargs.get("base_url") or os.getenv(
-            "OLLAMA_BASE_URL", "http://localhost:11434"
-        )
-        temperature = float(
-            kwargs.get("temperature", os.getenv("OLLAMA_TEMPERATURE", "0.7"))
-        )
         return OllamaLLM(
-            model_name=model_name, base_url=base_url, temperature=temperature
+            model_name=settings.ollama_model,
+            base_url=settings.ollama_base_url,
+            temperature=settings.ollama_temperature,
         )
-    elif model_type == "dummy":
+    if settings.llm_model == "dummy":
         from llm.dummy import DummyLLM
 
         return DummyLLM()
-    elif model_type in ("transformers", "hugging-face"):
+    if settings.llm_model == "transformers":
         from llm.transformers import TransformersLLM
 
-        model_name = kwargs.get("model_name") or os.getenv("TRANSFORMERS_MODEL")
-        if not model_name:
-            raise ValueError(
-                "TRANSFORMERS_MODEL must be configured when LLM_MODEL=transformers"
-            )
-        return TransformersLLM(model_name=model_name)
-    else:
-        from llm.transformers import TransformersLLM
-
-        return TransformersLLM(model_name=kwargs.get("model_name", model_type))
+        return TransformersLLM(model_name=settings.transformers_model)
+    raise ValueError(f"Unsupported LLM_MODEL: {settings.llm_model}")
 
 
 class UploadService:
     def __init__(self, file_path: str, db=None, engine=None):
         self.file_path = file_path
-        self.parser = DocumentParser(file_path)
-        self.engine = engine or EmbeddingEngine()
+        settings = get_settings()
+        self.parser = DocumentParser(file_path, settings=settings)
+        self.engine = engine or EmbeddingEngine(settings=settings)
         self.db = db or get_vector_db()
 
     def insert_documents(self):
@@ -124,7 +114,7 @@ class LLMService:
     ):
         self.llm = llm
         self.db = db or get_vector_db()
-        self.engine = embedding_engine or EmbeddingEngine()
+        self.engine = embedding_engine or EmbeddingEngine(settings=get_settings())
 
     def _query(self, query, top_k=5):
         query_embedding = self.engine.generate_embeddings([query])[0]

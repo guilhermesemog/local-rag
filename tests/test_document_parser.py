@@ -35,9 +35,10 @@ def test_cleaning_preserves_table_columns():
 def test_chunk_configuration_rejects_invalid_overlap(monkeypatch):
     parser = DocumentParser.__new__(DocumentParser)
     parser._document = []
-    monkeypatch.setenv("CHUNK_SIZE", "100")
-    monkeypatch.setenv("CHUNK_OVERLAP", "100")
+    from settings import Settings
+
+    parser.settings = Settings(_env_file=None)
     import pytest
 
     with pytest.raises(ValueError, match="overlap"):
-        parser.split_documents()
+        parser.split_documents(chunk_size=100, chunk_overlap=100)

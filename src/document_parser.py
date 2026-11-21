@@ -1,22 +1,20 @@
-import os
 import re
 from pathlib import Path
 from uuid import uuid4
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from errors import OCRUnavailableError
+from settings import Settings, get_settings
 
 
 class DocumentParser:
-    def __init__(self, file_path):
+    def __init__(self, file_path, settings: Settings | None = None):
+        settings = settings or get_settings()
+        self.settings = settings
         self.file_path = Path(file_path)
         self.document_id = str(uuid4())
-        self.ocr_enabled = os.getenv("OCR_ENABLED", "false").lower() in {
-            "1",
-            "true",
-            "yes",
-        }
-        self.ocr_language = os.getenv("OCR_LANG", "eng")
+        self.ocr_enabled = settings.ocr_enabled
+        self.ocr_language = settings.ocr_lang
         self._loader = PyPDFLoader(file_path)
         self._document = self._loader.load()
         if self.ocr_enabled:
@@ -46,11 +44,10 @@ class DocumentParser:
         return cleaned_docs
 
     def split_documents(self, chunk_size=None, chunk_overlap=None):
-        chunk_size = chunk_size or int(os.getenv("CHUNK_SIZE", "1000"))
+        settings = getattr(self, "settings", None) or get_settings()
+        chunk_size = settings.chunk_size if chunk_size is None else chunk_size
         chunk_overlap = (
-            chunk_overlap
-            if chunk_overlap is not None
-            else int(os.getenv("CHUNK_OVERLAP", "200"))
+            settings.chunk_overlap if chunk_overlap is None else chunk_overlap
         )
         if chunk_size <= 0 or chunk_overlap < 0 or chunk_overlap >= chunk_size:
             raise ValueError(

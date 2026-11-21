@@ -1,13 +1,10 @@
 import argparse
 import json
-import os
 import re
 import sys
 import tempfile
 import time
 from pathlib import Path
-
-from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -98,23 +95,25 @@ def evaluate_case(case, db, engine, llm, top_k=6):
     }
 
 
-def run_configuration(pdf_path, cases, chunk_size, chunk_overlap, embedding_model):
+def run_configuration(
+    pdf_path, cases, chunk_size, chunk_overlap, embedding_model, settings
+):
     from db.sqlite_db import SQLiteVectorDB
     from document_parser import DocumentParser
     from embedding_engine import EmbeddingEngine
     from services import build_llm
 
-    parser = DocumentParser(str(pdf_path))
+    parser = DocumentParser(str(pdf_path), settings=settings)
     pages = parser.clean_documents()
     chunks = parser.split_documents(chunk_size, chunk_overlap)
     if not chunks:
         raise RuntimeError("Evaluation PDF produced no text chunks.")
 
-    engine = EmbeddingEngine(model_name=embedding_model)
+    engine = EmbeddingEngine(model_name=embedding_model, settings=settings)
     embed_start = time.perf_counter()
     vectors = engine.generate_embeddings([chunk.page_content for chunk in chunks])
     embedding_seconds = time.perf_counter() - embed_start
-    llm = build_llm()
+    llm = build_llm(settings)
 
     with tempfile.TemporaryDirectory(prefix="localrag-eval-") as temp_dir:
         db = SQLiteVectorDB(str(Path(temp_dir) / "evaluation.sqlite"))
@@ -150,7 +149,7 @@ def run_configuration(pdf_path, cases, chunk_size, chunk_overlap, embedding_mode
             "chunk_size": chunk_size,
             "chunk_overlap": chunk_overlap,
             "embedding_model": embedding_model,
-            "llm_model": os.getenv("LLM_MODEL", "dummy"),
+            "llm_model": settings.llm_model,
             "top_k": 6,
             "document": str(pdf_path.relative_to(ROOT)),
             "pages": len(pages),
@@ -183,7 +182,8 @@ def _mean(values):
 
 
 def main(argv=None):
-    load_dotenv(ROOT / ".env")
+    from settings import get_settings
+
     parser = argparse.ArgumentParser(
         description="Evaluate LocalRAG on the bundled benchmark."
     )
@@ -201,7 +201,11 @@ def main(argv=None):
         )
 
     cases = json.loads((ROOT / "evaluation" / "questions.json").read_text())
-    if os.getenv("LLM_MODEL", "dummy").lower() == "dummy":
+    try:
+        settings = get_settings()
+    except Exception as exc:
+        parser.error(f"Invalid application configuration: {exc}")
+    if settings.llm_model == "dummy":
         parser.error(
             "Configure a real LLM_MODEL in .env before running the evaluation."
         )
@@ -216,6 +220,7 @@ def main(argv=None):
                         chunk_size,
                         args.chunk_overlap,
                         embedding_model,
+                        settings,
                     )
                 )
     except Exception as exc:

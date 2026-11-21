@@ -6,7 +6,7 @@ The system processes documents, generates vector embeddings, and stores them in 
 
 *   **Document Upload**: Accepts PDF files, extracts text, and splits it into chunks.
 *   **Semantic Search**: Uses embeddings (via `sentence-transformers`) to find relevant sections in the documents.
-*   **LLM Integration**: Cloud models like Google Gemini and Local models with Ollama and Hugging Face Transformers Models
+*   **LLM Integration**: Google Gemini, Ollama, Hugging Face Transformers, or a no-credentials dummy provider for initial setup.
 *   **REST API**: Simple interface built with FastAPI for upload and queries.
 *   **Web Interface:** There's a simple web interface built to communicate with the system effortlessly.
 
@@ -44,15 +44,27 @@ source venv/bin/activate
 venv\Scripts\activate
 ```
 
-Install the dependencies:
+Install PyTorch first so the CPU-only build is used by default, then install the core application dependencies. `fastapi[standard]` includes the `fastapi` CLI used by the startup command below, along with Uvicorn:
 
 ```bash
+python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
+```
+
+For GPU acceleration, install the PyTorch build matching your CUDA version using the [official PyTorch selector](https://pytorch.org/get-started/locally/) before `requirements.txt`. Install only the optional dependency groups you need:
+
+```bash
+pip install -r requirements-dev.txt          # tests and Ruff
+pip install -r requirements-gemini.txt        # Gemini provider
+pip install -r requirements-ollama.txt        # Ollama provider
+pip install -r requirements-transformers.txt # Transformers provider
+pip install -r requirements-postgres.txt      # PostgreSQL and pgvector
+pip install -r requirements-ocr.txt           # OCR Python packages (also needs Tesseract)
 ```
 
 ### 3. Configure Environment Variables
 
-Create a `.env` file in the project root following `.env.example` template:
+Copy `.env.example` to `.env`. It defaults to `LLM_MODEL=dummy` and SQLite, so the application can start without provider credentials or a database server. The dummy provider is for setup and API checks; configure a real provider to generate useful answers. Settings are read and validated at startup. For Gemini, set `LLM_MODEL=gemini`, `GEMINI_MODEL`, and `GEMINI_API_KEY`; Transformers requires `LLM_MODEL=transformers` and `TRANSFORMERS_MODEL`. Ollama uses the configured model and URL and expects its local service to be running.
 
 ### 4. Run the Application
 
@@ -63,7 +75,7 @@ fastapi dev src/app.py
 ```
 The API will be available at `http://localhost:8000/`.
 
-### OPTIONAL. Configure Ollama 
+### OPTIONAL. Configure Ollama
 
 If you plan to use ollama models, ensure you have Ollama installed and running locally. The project is configured to use the `llama3` model by default.
 
@@ -108,7 +120,7 @@ The command prints the report and writes `evaluation-report.json` by default (ov
 
 Run the unit and API tests with `pytest -q`. The suite uses temporary SQLite databases and mocks external model calls. PostgreSQL integration tests are skipped by default; set `LOCAL_RAG_TEST_POSTGRES=1` and configure the database environment variables to run them against a dedicated test database.
 
-GitHub Actions runs focused Ruff checks and the automated tests on pull requests and pushes to `main`. The workflow installs the lightweight `requirements-ci.txt`; run `ruff check --select E4,E7,E9,F src tests`, `ruff format --check tests`, and `python -m pytest -q` locally to match CI. Formatting checks currently cover tests; formatting existing application code is deferred to avoid a broad unrelated diff.
+GitHub Actions runs focused Ruff checks and the automated tests on pull requests and pushes to `main`. The workflow installs `requirements-ci.txt`; locally, install `requirements-dev.txt` after the CPU PyTorch setup, then run `ruff check --select E4,E7,E9,F src tests`, `ruff format --check tests`, and `python -m pytest -q` to match CI. Formatting checks currently cover tests; formatting existing application code is deferred to avoid a broad unrelated diff.
 
 ### Database and embedding index compatibility
 
@@ -129,8 +141,8 @@ You can interact with the API through the automatic documentation (Swagger UI) a
 Chunking is configured with `CHUNK_SIZE` and `CHUNK_OVERLAP` (defaults: 1000 and 200 characters). Text extraction keeps pages separate, preserves line boundaries, and drops empty or repeated chunks within a page. Scanned pages are reported as having no processable text unless OCR is enabled. To enable OCR, install `requirements-ocr.txt`, install the Tesseract system executable and the language data selected by `OCR_LANG`, then set `OCR_ENABLED=true`. OCR defaults to disabled. Each stored source records whether it was extracted from PDF text or OCR.
 
 3. **Changing Models**
-    *   Change the .env `LLM_MODEL` variable to change the provider in use. Available now: [`gemini`, `ollama`, `hugging-face-model-id`].
-    *   For Gemini, configure `GEMINI_MODEL`.
+    *   Change `.env` `LLM_MODEL` to `dummy`, `gemini`, `ollama`, or `transformers`.
+    *   For Gemini, configure `GEMINI_MODEL` and `GEMINI_API_KEY`.
     *   For Ollama, configure `OLLAMA_MODEL`, `OLLAMA_BASE_URL`, and `OLLAMA_TEMPERATURE`.
     *   For Transformers, set `LLM_MODEL=transformers` and configure `TRANSFORMERS_MODEL`.
     *   Gemini requests use `GEMINI_REQUEST_TIMEOUT` and `GEMINI_RETRIES`; the defaults are 30 seconds and 1 retry.

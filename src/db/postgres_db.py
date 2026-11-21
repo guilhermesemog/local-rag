@@ -1,30 +1,31 @@
 import json
-import os
 from contextlib import contextmanager
 from pathlib import Path
 
-from dotenv import load_dotenv
 from psycopg2 import pool
 from psycopg2.extras import Json, execute_values
 
 from db.vector_db import SearchResult, VectorDB
 from errors import IndexCompatibilityError
+from settings import Settings, get_settings
 
 MIGRATION_DIR = Path(__file__).parent / "migrations" / "postgres"
 
 
 class PostgresVectorDB(VectorDB):
-    def __init__(self, dimension: int = 384):
-        load_dotenv()
-        self.dimension = dimension
+    def __init__(self, dimension: int | None = None, settings: Settings | None = None):
+        settings = settings or get_settings()
+        self.dimension = dimension or settings.embedding_dimension
+        if not settings.db_password:
+            raise ValueError("DB_PASSWORD is required to connect to PostgreSQL")
         self.pool = pool.ThreadedConnectionPool(
-            int(os.getenv("POSTGRES_POOL_MIN", "1")),
-            int(os.getenv("POSTGRES_POOL_MAX", "8")),
-            dbname=os.getenv("DB_NAME", "semantic_search_db"),
-            user=os.getenv("DB_USER", "vector_admin"),
-            password=os.getenv("DB_PASSWORD", "vector_password"),
-            host=os.getenv("DB_HOST", "localhost"),
-            port=os.getenv("DB_PORT", "5433"),
+            settings.postgres_pool_min,
+            settings.postgres_pool_max,
+            dbname=settings.db_name,
+            user=settings.db_user,
+            password=settings.db_password.get_secret_value(),
+            host=settings.db_host,
+            port=settings.db_port,
         )
         try:
             self.create_table()

@@ -1,17 +1,23 @@
 from sentence_transformers import SentenceTransformer
 from functools import lru_cache
 import logging
-import os
 
 from errors import EmbeddingError
+from settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
 
 class EmbeddingEngine:
-    def __init__(self, model_name: str | None = None, device: str | None = None):
-        self.model_name = model_name or os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-        self.expected_dimension = int(os.getenv("EMBEDDING_DIMENSION", "384"))
+    def __init__(
+        self,
+        model_name: str | None = None,
+        device: str | None = None,
+        settings: Settings | None = None,
+    ):
+        settings = settings or get_settings()
+        self.model_name = model_name or settings.embedding_model
+        self.expected_dimension = settings.embedding_dimension
         if not device:
             import torch
 
@@ -49,4 +55,4 @@ class EmbeddingEngine:
 
 @lru_cache(maxsize=1)
 def get_embedding_engine() -> EmbeddingEngine:
-    return EmbeddingEngine()
+    return EmbeddingEngine(settings=get_settings())

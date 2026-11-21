@@ -1,33 +1,29 @@
-import os
+from __future__ import annotations
+
 import logging
 from functools import lru_cache
 
-from dotenv import load_dotenv
-
-from db.postgres_db import PostgresVectorDB
-from db.sqlite_db import SQLiteVectorDB
 from errors import DatabaseError
+from settings import get_settings
 
 logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def get_vector_db() -> PostgresVectorDB | SQLiteVectorDB:
-    load_dotenv()
-    db_type = os.getenv("DB_OPTION", "sqlite").lower()
-    db_path = os.getenv("SQLITE_DB_PATH")
-    dimension = int(os.getenv("EMBEDDING_DIMENSION", "384"))
+def get_vector_db():
+    settings = get_settings()
 
     try:
-        if db_type == "postgres":
-            return PostgresVectorDB(dimension=dimension)
+        if settings.db_option == "postgres":
+            from db.postgres_db import PostgresVectorDB
 
-        if db_type == "sqlite" and db_path:
-            return SQLiteVectorDB(db_path=db_path, dimension=dimension)
+            return PostgresVectorDB(settings=settings)
+        from db.sqlite_db import SQLiteVectorDB
 
-        if db_type == "sqlite":
-            return SQLiteVectorDB(dimension=dimension)
-        raise ValueError(f"Unsupported DB_OPTION: {db_type}")
+        return SQLiteVectorDB(
+            db_path=settings.sqlite_db_path,
+            dimension=settings.embedding_dimension,
+        )
     except Exception as exc:
         logger.exception("Vector database initialization failed")
         raise DatabaseError() from exc

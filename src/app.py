@@ -3,7 +3,6 @@ from embedding_engine import get_embedding_engine
 
 import tempfile
 import logging
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from pydantic import BaseModel
@@ -13,14 +12,13 @@ from fastapi.responses import JSONResponse
 from errors import AppError
 from db.factory_db import close_vector_db
 
-from dotenv import load_dotenv
+from settings import get_settings
 
-load_dotenv()
-
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+settings = get_settings()
+logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
 
-llm = build_llm()
+llm = build_llm(settings)
 
 
 @asynccontextmanager
