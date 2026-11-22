@@ -571,6 +571,8 @@ Permitir iniciar uma demonstração completa com poucos comandos.
 
 A demonstração pode ser iniciada e reiniciada por Docker com poucos comandos.
 
+**Conclusão:** confirmada em 2026-11-21 pelo usuário após os testes manuais e automatizados. A interface, API, persistência SQLite, overlay PostgreSQL/pgvector e profile opcional do Ollama foram implementados; o Dockerfile e as configurações Compose foram validados.
+
 ---
 
 # Etapa 12 — Processamento assíncrono

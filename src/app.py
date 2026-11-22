@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from errors import AppError
 from db.factory_db import close_vector_db
 
@@ -79,7 +80,7 @@ PDF_SIGNATURE = b"%PDF-"
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
-@app.post("/upload-file/")
+@app.post("/upload-file")
 def upload_file(file: UploadFile | None = None):
     if file is None or not file.filename:
         raise HTTPException(status_code=400, detail="A PDF file is required.")
@@ -129,7 +130,7 @@ def upload_file(file: UploadFile | None = None):
         file.file.close()
 
 
-@app.post("/query/")
+@app.post("/query")
 def query_llm(request: QueryRequest):
     service = LLMService(
         llm,
@@ -141,15 +142,27 @@ def query_llm(request: QueryRequest):
     return {"results": results, "sources": []}
 
 
-@app.delete("/database/")
+@app.delete("/database")
 def clear_database():
     service = DBService()
     service.clear_database()
     return {"status": "Vector database cleared."}
 
 
-@app.get("/database/")
+@app.get("/database")
 def is_database_empty():
     service = DBService()
     empty = service.check_empty()
     return {"is_empty": empty}
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+
+app.mount(
+    "/",
+    StaticFiles(directory=Path(__file__).resolve().parents[1] / "web", html=True),
+    name="web",
+)

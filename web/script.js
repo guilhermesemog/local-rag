@@ -14,7 +14,7 @@ const restartLoading = document.getElementById('restartLoading');
 const emptyMessage = document.getElementById('emptyMessage');
 const appStatus = document.getElementById('appStatus');
 
-const baseURL = 'http://127.0.0.1:8000';
+const baseURL = window.location.origin;
 let databaseIsEmpty = true;
 
 function setStatus(message, type = '') {
@@ -41,7 +41,7 @@ async function readJson(response) {
 
 async function refreshDatabaseState() {
     try {
-        const response = await fetch(`${baseURL}/database/`);
+        const response = await fetch(`${baseURL}/database`);
         const data = await readJson(response);
 
         if (!response.ok) {
@@ -79,7 +79,7 @@ uploadFileButton.addEventListener('click', async () => {
     formData.append('file', file);
 
     try {
-        const response = await fetch(`${baseURL}/upload-file/`, {
+        const response = await fetch(`${baseURL}/upload-file`, {
             method: 'POST',
             body: formData,
         });
@@ -118,7 +118,7 @@ async function queryRequest() {
     answerContent.replaceChildren();
 
     try {
-        const response = await fetch(`${baseURL}/query/`, {
+        const response = await fetch(`${baseURL}/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question }),
@@ -183,7 +183,7 @@ restartButton.addEventListener('click', async () => {
     restartButton.disabled = true;
 
     try {
-        const response = await fetch(`${baseURL}/database/`, {
+        const response = await fetch(`${baseURL}/database`, {
             method: 'DELETE',
         });
         const data = await readJson(response);

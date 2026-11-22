@@ -1,6 +1,6 @@
 This project is a **RAG (Retrieval-Augmented Generation)** application built with **FastAPI**, designed to allow the ingestion of PDF documents and asking questions about their content using Large Language Models (LLMs).
 
-The system processes documents, generates vector embeddings, and stores them in a **PostgreSQL** database with the **pgvector** extension. Queries can be answered using a lot of differents models such as Gemini, Ollama models and Hugging Face Transformers models.
+The system processes documents, generates vector embeddings, and stores them in SQLite by default or PostgreSQL with the **pgvector** extension. Queries can use Gemini, Ollama, Hugging Face Transformers, or the dummy provider for initial setup.
 
 ## Features
 
@@ -62,45 +62,52 @@ pip install -r requirements-postgres.txt      # PostgreSQL and pgvector
 pip install -r requirements-ocr.txt           # OCR Python packages (also needs Tesseract)
 ```
 
-### 3. Configure Environment Variables
+### 3. Configure and run with Docker Compose
 
-Copy `.env.example` to `.env`. It defaults to `LLM_MODEL=dummy` and SQLite, so the application can start without provider credentials or a database server. The dummy provider is for setup and API checks; configure a real provider to generate useful answers. Settings are read and validated at startup. For Gemini, set `LLM_MODEL=gemini`, `GEMINI_MODEL`, and `GEMINI_API_KEY`; Transformers requires `LLM_MODEL=transformers` and `TRANSFORMERS_MODEL`. Ollama uses the configured model and URL and expects its local service to be running.
+Copy `.env.example` to `.env`. The defaults use SQLite and `LLM_MODEL=dummy`, so no provider credentials or database server are needed for initial startup. Build and start the application:
 
-### 4. Run the Application
+```bash
+docker compose up --build -d
+```
 
-Run the FastAPI server:
+Open the web interface at `http://localhost:8000/`, the API docs at `http://localhost:8000/docs`, and the health endpoint at `http://localhost:8000/health`. The embedding model is downloaded the first time it is needed, so the machine needs internet access for the initial upload.
+
+The SQLite database and downloaded embedding model are stored in named Docker volumes. Stop the services with `docker compose down`; this preserves both. `docker compose down -v` also deletes the volumes and indexed documents.
+
+#### Optional PostgreSQL/pgvector
+
+Set a local `DB_PASSWORD` in `.env`, then start the PostgreSQL overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml up --build -d
+```
+
+This configures the API to use PostgreSQL on the Compose network and stores its data in a separate named volume. The database is also published on host port 5433 by default; set `POSTGRES_HOST_PORT` to change it. Use the same two Compose files with `down` to stop this stack. Data is removed only with `down -v`.
+
+#### Optional Ollama service
+
+Set `LLM_MODEL=ollama` in `.env`, then start the Ollama profile:
+
+```bash
+docker compose --profile ollama up --build -d
+docker compose --profile ollama exec ollama ollama pull llama3
+```
+
+The default Ollama model is `llama3`; change `OLLAMA_MODEL` and the pull command together if you select another model. Model files persist in a named volume. To combine Ollama and PostgreSQL, add both Compose files and the profile:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml --profile ollama up --build -d
+```
+
+#### Run directly without Docker
+
+Copy `.env.example` to `.env`, install the dependencies as described above, and run:
 
 ```bash
 fastapi dev src/app.py
 ```
-The API will be available at `http://localhost:8000/`.
 
-### OPTIONAL. Configure Ollama
-
-If you plan to use ollama models, ensure you have Ollama installed and running locally. The project is configured to use the `llama3` model by default.
-
-```bash
-ollama pull llama3
-ollama serve
-```
-
-### OPTIONAL. Configure the Database
-
-If you want to persist the data you produce, the project uses Docker Compose to spin up a PostgreSQL instance with the `pgvector` extension enabled.
-
-```bash
-docker-compose up -d
-```
-
-## Web Interface
-```bash
-cd web/
-python3 -m http.server 8002
-# or use an extension like live server, it will work the same.
-```
-
-Open `http://localhost:8002` in the browser. Do not open `web/index.html`
-directly with `file://`, since browsers treat that page as `origin: null`.
+The API and web interface are served from `http://localhost:8000/`. Do not open `web/index.html` directly with `file://`.
 
 ## How to Use
 
@@ -129,16 +136,16 @@ SQLite and PostgreSQL schemas are initialized through numbered SQL migrations wi
 You can interact with the API through the automatic documentation (Swagger UI) at `http://localhost:8000/docs`.
 
 1.  **PDF Upload**:
-    *   Use the `POST /upload-file/` endpoint with a multipart `file` field to upload a PDF file (maximum size: 20 MiB).
+    *   Use the `POST /upload-file` endpoint with a multipart `file` field to upload a PDF file (maximum size: 20 MiB).
     *   The endpoint requires a `.pdf` filename, `application/pdf` MIME type, and a valid `%PDF-` signature. Invalid files return HTTP 400; files over the limit return HTTP 413.
 
 2.  **Ask Questions**:
-    *   Use `POST /query/` with `{"question": "Your question here"}`.
+    *   Use `POST /query` with `{"question": "Your question here"}`.
     *   Successful responses include `results` (answer text) and `sources` (document name, page, chunk, excerpt, and similarity for each retrieved passage).
 
 ### PDF parsing and OCR
 
-Chunking is configured with `CHUNK_SIZE` and `CHUNK_OVERLAP` (defaults: 1000 and 200 characters). Text extraction keeps pages separate, preserves line boundaries, and drops empty or repeated chunks within a page. Scanned pages are reported as having no processable text unless OCR is enabled. To enable OCR, install `requirements-ocr.txt`, install the Tesseract system executable and the language data selected by `OCR_LANG`, then set `OCR_ENABLED=true`. OCR defaults to disabled. Each stored source records whether it was extracted from PDF text or OCR.
+Chunking is configured with `CHUNK_SIZE` and `CHUNK_OVERLAP` (defaults: 1000 and 200 characters). Text extraction keeps pages separate, preserves line boundaries, and drops empty or repeated chunks within a page. Scanned pages are reported as having no processable text unless OCR is enabled. For local Python runs, install `requirements-ocr.txt` and the Tesseract system executable with the language data selected by `OCR_LANG`. The Docker image includes Tesseract English data; set `OCR_ENABLED=true` in `.env` to enable it there. Other OCR languages need their Tesseract language data added to the image. OCR defaults to disabled. Each stored source records whether it was extracted from PDF text or OCR.
 
 3. **Changing Models**
     *   Change `.env` `LLM_MODEL` to `dummy`, `gemini`, `ollama`, or `transformers`.
@@ -148,7 +155,7 @@ Chunking is configured with `CHUNK_SIZE` and `CHUNK_OVERLAP` (defaults: 1000 and
     *   Gemini requests use `GEMINI_REQUEST_TIMEOUT` and `GEMINI_RETRIES`; the defaults are 30 seconds and 1 retry.
 
 3.  **Clear Database**:
-    *   Use `DELETE /clear-database/` to remove all documents and embeddings.
+    *   Use `DELETE /database` to remove all documents and embeddings. `GET /database` reports whether the index is empty.
 
 ### Database and embedding index compatibility
 

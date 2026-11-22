@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS embeddings.documents (
     id BIGSERIAL PRIMARY KEY,
     content TEXT NOT NULL,

@@ -1,0 +1,15 @@
+.git
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.env
+*.db
+evaluation-report*.json
+tests
+evaluation
+samples
+IMPROVEMENT_PLAN.md
+README.md

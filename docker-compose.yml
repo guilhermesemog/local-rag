@@ -1,25 +1,64 @@
 services:
-  vectordb:
-    image: pgvector/pgvector:pg16
-    container_name: postgres-vector-w2
-    hostname: vectordb
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
-
     environment:
-      - POSTGRES_USER=vector_admin
-      - POSTGRES_PASSWORD=vector_password
-      - POSTGRES_DB=semantic_search_db
-
+      LLM_MODEL: ${LLM_MODEL:-dummy}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GEMINI_REQUEST_TIMEOUT: ${GEMINI_REQUEST_TIMEOUT:-30}
+      GEMINI_RETRIES: ${GEMINI_RETRIES:-1}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_TEMPERATURE: ${OLLAMA_TEMPERATURE:-0.7}
+      TRANSFORMERS_MODEL: ${TRANSFORMERS_MODEL:-}
+      DB_OPTION: sqlite
+      SQLITE_DB_PATH: /data/sqlite.db
+      DB_NAME: ${DB_NAME:-semantic_search_db}
+      DB_USER: ${DB_USER:-vector_admin}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      POSTGRES_POOL_MIN: ${POSTGRES_POOL_MIN:-1}
+      POSTGRES_POOL_MAX: ${POSTGRES_POOL_MAX:-8}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-384}
+      CHUNK_SIZE: ${CHUNK_SIZE:-1000}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-200}
+      OCR_ENABLED: ${OCR_ENABLED:-false}
+      OCR_LANG: ${OCR_LANG:-eng}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HF_HOME: /cache/huggingface
     ports:
-      - "5433:5432"
-
+      - "${API_HOST_PORT:-8000}:8000"
     volumes:
-      - pgvector_data:/var/lib/postgresql/data
-      - ./init-scripts:/docker-entrypoint-initdb.d
-
-    shm_size: 1gb
-
+      - sqlite_data:/data
+      - huggingface_cache:/cache/huggingface
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [ollama]
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
 volumes:
-  pgvector_data:
-    driver: local
+  sqlite_data:
+  ollama_data:
+  huggingface_cache:
