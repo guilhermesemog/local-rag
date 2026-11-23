@@ -131,9 +131,10 @@ class JobManager:
 
     def _run_job(self, job: dict):
         job_id = job["id"]
-        progress = lambda phase, value: self.db.update_job(
-            job_id, phase=phase, progress=value
-        )
+
+        def progress(phase, value):
+            self.db.update_job(job_id, phase=phase, progress=value)
+
         if job["job_type"] == "upload":
             service = UploadService(
                 job["payload"]["file_path"],
