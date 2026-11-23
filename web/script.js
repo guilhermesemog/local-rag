@@ -39,6 +39,26 @@ async function readJson(response) {
     }
 }
 
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function waitForJob(jobId, onUpdate) {
+    while (true) {
+        const response = await fetch(`${baseURL}/jobs/${encodeURIComponent(jobId)}`);
+        const job = await readJson(response);
+        if (!response.ok) {
+            throw new Error(job.detail || 'Failed to check processing status');
+        }
+        onUpdate(job);
+        if (job.status === 'failed' || job.status === 'cancelled') {
+            throw new Error(job.error || 'Processing task was cancelled.');
+        }
+        if (job.status === 'completed') {
+            return job;
+        }
+        await delay(1000);
+    }
+}
+
 async function refreshDatabaseState() {
     try {
         const response = await fetch(`${baseURL}/database`);
@@ -74,7 +94,7 @@ uploadFileButton.addEventListener('click', async () => {
     }
 
     setLoading(uploadLoading, true);
-    setStatus('Uploading and processing document...');
+    setStatus('Uploading document...');
     const formData = new FormData();
     formData.append('file', file);
 
@@ -90,7 +110,11 @@ uploadFileButton.addEventListener('click', async () => {
         }
 
         fileInput.value = '';
-        setStatus(data.status || 'File uploaded and processed successfully.', 'success');
+        setStatus('Upload accepted; processing has started.');
+        const completed = await waitForJob(data.id, (job) => {
+            setStatus(`Processing document: ${job.phase.replaceAll('_', ' ')} (${job.progress}%)`);
+        });
+        setStatus(completed.result?.status || 'Document processed successfully.', 'success');
         await refreshDatabaseState();
     } catch (error) {
         setStatus(error.message, 'error');
@@ -129,14 +153,20 @@ async function queryRequest() {
             throw new Error(data.detail || 'Question failed');
         }
 
+        setStatus('Question accepted; generating an answer...');
+        const completed = await waitForJob(data.id, (job) => {
+            setStatus(`Answering: ${job.phase.replaceAll('_', ' ')} (${job.progress}%)`);
+        });
+        const answer = completed.result || {};
+
         const title = document.createElement('h3');
         title.textContent = 'Answer:';
 
         const paragraph = document.createElement('p');
-        paragraph.textContent = String(data.results ?? 'No answer was returned.');
+        paragraph.textContent = String(answer.results ?? 'No answer was returned.');
 
         const sourceList = document.createElement('ul');
-        for (const source of data.sources ?? []) {
+        for (const source of answer.sources ?? []) {
             const item = document.createElement('li');
             const label = document.createElement('strong');
             const page = source.page ? `, page ${source.page}` : '';

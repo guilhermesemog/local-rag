@@ -16,6 +16,7 @@ services:
       TRANSFORMERS_MODEL: ${TRANSFORMERS_MODEL:-}
       DB_OPTION: sqlite
       SQLITE_DB_PATH: /data/sqlite.db
+      JOB_UPLOAD_DIR: /data/uploads
       DB_NAME: ${DB_NAME:-semantic_search_db}
       DB_USER: ${DB_USER:-vector_admin}
       DB_HOST: ${DB_HOST:-postgres}

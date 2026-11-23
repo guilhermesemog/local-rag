@@ -43,11 +43,12 @@ def postgres_db():
 
 
 @pytest.fixture
-def api_client(monkeypatch, sqlite_db):
+def api_client(monkeypatch, sqlite_db, tmp_path):
     from fastapi.testclient import TestClient
 
     monkeypatch.setenv("LLM_MODEL", "dummy")
     import app
+    import job_manager
     from llm.dummy import DummyLLM
 
     monkeypatch.setattr(app, "llm", DummyLLM())
@@ -59,14 +60,25 @@ def api_client(monkeypatch, sqlite_db):
         def generate_embeddings(self, _texts):
             return [[1.0] * 384]
 
-    monkeypatch.setattr(app, "get_embedding_engine", lambda: FakeEmbeddingEngine())
+    monkeypatch.setattr(
+        job_manager, "get_embedding_engine", lambda: FakeEmbeddingEngine()
+    )
+    monkeypatch.setattr(app.settings, "job_upload_dir", str(tmp_path / "job-uploads"))
+    monkeypatch.setattr(job_manager, "get_vector_db", lambda: sqlite_db)
+    monkeypatch.setattr(app, "close_vector_db", lambda: None)
     services = __import__("services")
     monkeypatch.setattr(app, "DBService", lambda: services.DBService(db=sqlite_db))
     monkeypatch.setattr(
-        app,
+        job_manager,
         "LLMService",
         lambda llm, embedding_engine=None: services.LLMService(
             llm, embedding_engine=embedding_engine, db=sqlite_db
         ),
     )
-    return TestClient(app.app)
+    manager = job_manager.JobManager(app.llm, app.settings.job_upload_dir)
+    manager.start()
+    app.app.state.job_manager = manager
+    try:
+        yield TestClient(app.app)
+    finally:
+        manager.stop()

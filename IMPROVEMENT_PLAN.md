@@ -611,6 +611,10 @@ Evitar bloquear requisições durante uploads grandes e geração longa de respo
 
 Uploads grandes não travam toda a API e seu progresso é compreensível.
 
+**Implementação:** endpoints de upload e consulta agora criam tarefas persistidas, workers separados processam cada tipo, e a interface acompanha fases, progresso, resultado e falhas. A API oferece consulta e cancelamento de tarefas; SQLite e PostgreSQL recebem migrações próprias.
+
+**Conclusão:** confirmada em 2026-11-23 pelo usuário após os testes manuais e automatizados. A fila persistente, o acompanhamento de tarefas, o processamento concorrente entre uploads e consultas e a exibição de falhas foram validados.
+
 ---
 
 # Etapa 13 — Segurança mínima

@@ -1,6 +1,7 @@
-import pytest
 import sqlite3
+
 import numpy as np
+import pytest
 
 from errors import IndexCompatibilityError
 
@@ -84,3 +85,27 @@ def test_sqlite_migration_preserves_legacy_rows(tmp_path, fake_embeddings):
         assert database.is_empty() is False
     finally:
         database.close()
+
+
+def test_sqlite_jobs_persist_and_only_queued_jobs_can_be_cancelled(sqlite_db):
+    sqlite_db.create_job(
+        {"id": "queued-1", "job_type": "query", "payload": {"question": "hello"}}
+    )
+    assert sqlite_db.cancel_job("queued-1") is True
+    assert sqlite_db.get_job("queued-1")["status"] == "cancelled"
+
+    sqlite_db.create_job(
+        {"id": "running-1", "job_type": "query", "payload": {"question": "hello"}}
+    )
+    assert sqlite_db.claim_job("running-1") is True
+    assert sqlite_db.cancel_job("running-1") is False
+    sqlite_db.update_job(
+        "running-1",
+        status="completed",
+        phase="completed",
+        progress=100,
+        result={"results": "answer", "sources": []},
+    )
+    result = sqlite_db.get_job("running-1")
+    assert result["status"] == "completed"
+    assert result["result"] == {"results": "answer", "sources": []}

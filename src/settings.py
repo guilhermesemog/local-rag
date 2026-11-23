@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     db_port: int = 5433
     postgres_pool_min: int = 1
     postgres_pool_max: int = 8
+    job_upload_dir: str = str(PROJECT_ROOT / "data" / "uploads")
 
     embedding_model: str = "all-MiniLM-L6-v2"
     embedding_dimension: int = 384

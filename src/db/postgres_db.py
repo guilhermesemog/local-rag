@@ -45,75 +45,67 @@ class PostgresVectorDB(VectorDB):
             self.pool.putconn(connection)
 
     def create_table(self):
-        with self._connection() as connection:
-            with connection.cursor() as cursor:
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "CREATE SCHEMA IF NOT EXISTS embeddings;"
+                "CREATE TABLE IF NOT EXISTS embeddings.schema_migrations "
+                "(version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW());"
+                "CREATE TABLE IF NOT EXISTS embeddings.index_metadata "
+                "(id SMALLINT PRIMARY KEY CHECK(id = 1), model_name TEXT, dimension INTEGER);"
+            )
+            connection.commit()
+            for migration in sorted(MIGRATION_DIR.glob("*.sql")):
+                version = migration.stem
                 cursor.execute(
-                    "CREATE SCHEMA IF NOT EXISTS embeddings;"
-                    "CREATE TABLE IF NOT EXISTS embeddings.schema_migrations "
-                    "(version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW());"
-                    "CREATE TABLE IF NOT EXISTS embeddings.index_metadata "
-                    "(id SMALLINT PRIMARY KEY CHECK(id = 1), model_name TEXT, dimension INTEGER);"
+                    "SELECT 1 FROM embeddings.schema_migrations WHERE version = %s",
+                    (version,),
                 )
-                connection.commit()
-                for migration in sorted(MIGRATION_DIR.glob("*.sql")):
-                    version = migration.stem
+                if cursor.fetchone():
+                    continue
+                sql = migration.read_text().replace("${DIMENSION}", str(self.dimension))
+                try:
+                    cursor.execute(sql)
                     cursor.execute(
-                        "SELECT 1 FROM embeddings.schema_migrations WHERE version = %s",
+                        "INSERT INTO embeddings.schema_migrations(version) VALUES (%s)",
                         (version,),
                     )
-                    if cursor.fetchone():
-                        continue
-                    sql = migration.read_text().replace(
-                        "${DIMENSION}", str(self.dimension)
-                    )
-                    try:
-                        cursor.execute(sql)
-                        cursor.execute(
-                            "INSERT INTO embeddings.schema_migrations(version) VALUES (%s)",
-                            (version,),
-                        )
-                        connection.commit()
-                    except Exception:
-                        connection.rollback()
-                        raise
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
 
     def ensure_embedding_identity(self, model_name: str, dimension: int):
         if dimension != self.dimension:
             raise IndexCompatibilityError()
-        with self._connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "LOCK TABLE embeddings.documents IN ACCESS EXCLUSIVE MODE"
-                )
-                cursor.execute(
-                    "SELECT model_name, dimension FROM embeddings.index_metadata WHERE id = 1"
-                )
-                row = cursor.fetchone()
-                cursor.execute("SELECT COUNT(*) FROM embeddings.documents")
-                count = cursor.fetchone()[0]
-                if row is None:
-                    if count:
-                        raise IndexCompatibilityError()
-                    cursor.execute(
-                        "ALTER TABLE embeddings.documents ALTER COLUMN embedding "
-                        f"TYPE vector({dimension}) USING embedding::vector({dimension})"
-                    )
-                    cursor.execute(
-                        "DROP INDEX IF EXISTS embeddings.document_embedding_idx"
-                    )
-                    cursor.execute(
-                        "CREATE INDEX document_embedding_idx ON embeddings.documents "
-                        "USING hnsw (embedding vector_cosine_ops)"
-                    )
-                    cursor.execute(
-                        "INSERT INTO embeddings.index_metadata(id, model_name, dimension) VALUES (1, %s, %s)",
-                        (model_name, dimension),
-                    )
-                    connection.commit()
-                    return
-                if row != (model_name, dimension):
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute("LOCK TABLE embeddings.documents IN ACCESS EXCLUSIVE MODE")
+            cursor.execute(
+                "SELECT model_name, dimension FROM embeddings.index_metadata WHERE id = 1"
+            )
+            row = cursor.fetchone()
+            cursor.execute("SELECT COUNT(*) FROM embeddings.documents")
+            count = cursor.fetchone()[0]
+            if row is None:
+                if count:
                     raise IndexCompatibilityError()
-                connection.rollback()
+                cursor.execute(
+                    "ALTER TABLE embeddings.documents ALTER COLUMN embedding "
+                    f"TYPE vector({dimension}) USING embedding::vector({dimension})"
+                )
+                cursor.execute("DROP INDEX IF EXISTS embeddings.document_embedding_idx")
+                cursor.execute(
+                    "CREATE INDEX document_embedding_idx ON embeddings.documents "
+                    "USING hnsw (embedding vector_cosine_ops)"
+                )
+                cursor.execute(
+                    "INSERT INTO embeddings.index_metadata(id, model_name, dimension) VALUES (1, %s, %s)",
+                    (model_name, dimension),
+                )
+                connection.commit()
+                return
+            if row != (model_name, dimension):
+                raise IndexCompatibilityError()
+            connection.rollback()
 
     def validate_vector_dimension(self, vector: list[float]):
         if len(vector) != self.dimension:
@@ -163,6 +155,106 @@ class PostgresVectorDB(VectorDB):
                 empty = cursor.fetchone()[0] == 0
             connection.rollback()
             return empty
+
+    @staticmethod
+    def _job_from_row(cursor, row):
+        if row is None:
+            return None
+        job = dict(zip([column[0] for column in cursor.description], row))
+        for key in ("created_at", "updated_at", "started_at", "finished_at"):
+            if job[key] is not None:
+                job[key] = job[key].isoformat()
+        return job
+
+    def create_job(self, job: dict):
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO embeddings.processing_jobs "
+                    "(id, job_type, status, phase, progress, payload) "
+                    "VALUES (%s, %s, 'queued', 'queued', 0, %s)",
+                    (job["id"], job["job_type"], Json(job["payload"])),
+                )
+            connection.commit()
+
+    def get_job(self, job_id: str):
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT id, job_type, status, phase, progress, payload, result, error, "
+                    "created_at, updated_at, started_at, finished_at "
+                    "FROM embeddings.processing_jobs WHERE id = %s",
+                    (job_id,),
+                )
+                row = cursor.fetchone()
+                result = self._job_from_row(cursor, row)
+            connection.rollback()
+            return result
+
+    def list_jobs(self, status: str | None = None):
+        query = (
+            "SELECT id, job_type, status, phase, progress, payload, result, error, "
+            "created_at, updated_at, started_at, finished_at "
+            "FROM embeddings.processing_jobs"
+        )
+        params = ()
+        if status:
+            query += " WHERE status = %s"
+            params = (status,)
+        query += " ORDER BY created_at, id"
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(query, params)
+                jobs = [self._job_from_row(cursor, row) for row in cursor.fetchall()]
+            connection.rollback()
+            return jobs
+
+    def claim_job(self, job_id: str):
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE embeddings.processing_jobs SET status = 'processing', "
+                    "phase = 'starting', progress = 1, started_at = NOW(), updated_at = NOW() "
+                    "WHERE id = %s AND status = 'queued' RETURNING id",
+                    (job_id,),
+                )
+                claimed = cursor.fetchone() is not None
+            connection.commit()
+            return claimed
+
+    def update_job(self, job_id: str, **changes):
+        allowed = {"status", "phase", "progress", "result", "error"}
+        changes = {key: value for key, value in changes.items() if key in allowed}
+        if not changes:
+            return
+        assignments = [f"{key} = %s" for key in changes]
+        values = [
+            Json(value) if key == "result" and value is not None else value
+            for key, value in changes.items()
+        ]
+        assignments.append("updated_at = NOW()")
+        if changes.get("status") in {"completed", "failed", "cancelled"}:
+            assignments.append("finished_at = NOW()")
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"UPDATE embeddings.processing_jobs SET {', '.join(assignments)} WHERE id = %s",
+                    (*values, job_id),
+                )
+            connection.commit()
+
+    def cancel_job(self, job_id: str):
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE embeddings.processing_jobs SET status = 'cancelled', "
+                    "phase = 'cancelled', updated_at = NOW(), finished_at = NOW() "
+                    "WHERE id = %s AND status = 'queued' RETURNING id",
+                    (job_id,),
+                )
+                cancelled = cursor.fetchone() is not None
+            connection.commit()
+            return cancelled
 
     def close(self):
         if self.pool:

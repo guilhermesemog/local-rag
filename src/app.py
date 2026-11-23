@@ -1,18 +1,18 @@
-from services import UploadService, LLMService, DBService, build_llm
-from embedding_engine import get_embedding_engine
-
-import tempfile
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from pydantic import BaseModel
+
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from errors import AppError
-from db.factory_db import close_vector_db
+from pydantic import BaseModel
 
+from db.factory_db import close_vector_db
+from errors import AppError
+from job_manager import JobManager, JobQueueFull, public_job
+from services import DBService, build_llm
 from settings import get_settings
 
 settings = get_settings()
@@ -24,8 +24,14 @@ llm = build_llm(settings)
 
 @asynccontextmanager
 async def lifespan(_app):
-    yield
-    close_vector_db()
+    manager = JobManager(llm, settings.job_upload_dir)
+    manager.start()
+    _app.state.job_manager = manager
+    try:
+        yield
+    finally:
+        manager.stop()
+        close_vector_db()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -80,8 +86,8 @@ PDF_SIGNATURE = b"%PDF-"
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
-@app.post("/upload-file")
-def upload_file(file: UploadFile | None = None):
+@app.post("/upload-file", status_code=202)
+async def upload_file(file: UploadFile | None = None):
     if file is None or not file.filename:
         raise HTTPException(status_code=400, detail="A PDF file is required.")
     if Path(file.filename).suffix.lower() != ".pdf":
@@ -92,16 +98,15 @@ def upload_file(file: UploadFile | None = None):
             detail="The uploaded file must have MIME type application/pdf.",
         )
 
-    temp_file_path = None
+    temp_file_path = Path(settings.job_upload_dir) / f"{uuid.uuid4().hex}.pdf"
     total_size = 0
     signature = b""
+    queued = False
     try:
-        with tempfile.NamedTemporaryFile(
-            prefix="localrag-", suffix=".pdf", delete=False
-        ) as temp_file:
-            temp_file_path = Path(temp_file.name)
+        temp_file_path.parent.mkdir(parents=True, exist_ok=True)
+        with temp_file_path.open("wb") as temp_file:
             while True:
-                chunk = file.file.read(UPLOAD_CHUNK_SIZE)
+                chunk = await file.read(UPLOAD_CHUNK_SIZE)
                 if not chunk:
                     break
                 total_size += len(chunk)
@@ -121,31 +126,69 @@ def upload_file(file: UploadFile | None = None):
                 detail="The uploaded file does not have a valid PDF signature.",
             )
 
-        service = UploadService(str(temp_file_path), engine=get_embedding_engine())
-        service.insert_documents()
-        return {"status": "Documents inserted into the vector database."}
+        job_id = uuid.uuid4().hex
+        try:
+            job = app.state.job_manager.submit(
+                job_id,
+                "upload",
+                {"file_path": str(temp_file_path)},
+            )
+        except JobQueueFull as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        queued = True
+        return public_job(job)
     finally:
-        if temp_file_path is not None:
+        if not queued:
             temp_file_path.unlink(missing_ok=True)
-        file.file.close()
+        await file.close()
 
 
-@app.post("/query")
+@app.post("/query", status_code=202)
 def query_llm(request: QueryRequest):
-    service = LLMService(
-        llm,
-        embedding_engine=get_embedding_engine(),
-    )
-    results = service.answer(request.question)
-    if isinstance(results, dict):
-        return results
-    return {"results": results, "sources": []}
+    if DBService().check_empty():
+        raise HTTPException(
+            status_code=400, detail="Upload a document before querying."
+        )
+    try:
+        job = app.state.job_manager.submit(
+            uuid.uuid4().hex,
+            "query",
+            {"question": request.question},
+        )
+    except JobQueueFull as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return public_job(job)
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: str):
+    job = app.state.job_manager.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Processing task not found.")
+    return public_job(job)
+
+
+@app.delete("/jobs/{job_id}")
+def cancel_job(job_id: str):
+    job = app.state.job_manager.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Processing task not found.")
+    if not app.state.job_manager.cancel(job_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Only tasks that have not started can be cancelled.",
+        )
+    job = app.state.job_manager.get(job_id)
+    return public_job(job)
 
 
 @app.delete("/database")
 def clear_database():
-    service = DBService()
-    service.clear_database()
+    if not app.state.job_manager.clear_database_if_idle():
+        raise HTTPException(
+            status_code=409,
+            detail="Wait for or cancel queued tasks before clearing the database.",
+        )
     return {"status": "Vector database cleared."}
 
 

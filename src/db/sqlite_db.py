@@ -138,6 +138,104 @@ class SQLiteVectorDB(VectorDB):
                 self.conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0] == 0
             )
 
+    @staticmethod
+    def _job_from_row(row):
+        if row is None:
+            return None
+        keys = (
+            "id",
+            "job_type",
+            "status",
+            "phase",
+            "progress",
+            "payload",
+            "result",
+            "error",
+            "created_at",
+            "updated_at",
+            "started_at",
+            "finished_at",
+        )
+        job = dict(zip(keys, row))
+        job["payload"] = json.loads(job["payload"])
+        job["result"] = json.loads(job["result"]) if job["result"] else None
+        return job
+
+    def create_job(self, job: dict):
+        with self.lock:
+            self.conn.execute(
+                "INSERT INTO processing_jobs(id, job_type, status, phase, progress, payload) "
+                "VALUES (?, ?, 'queued', 'queued', 0, ?)",
+                (job["id"], job["job_type"], json.dumps(job["payload"])),
+            )
+            self.conn.commit()
+
+    def get_job(self, job_id: str):
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT id, job_type, status, phase, progress, payload, result, error, "
+                "created_at, updated_at, started_at, finished_at "
+                "FROM processing_jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+        return self._job_from_row(row)
+
+    def list_jobs(self, status: str | None = None):
+        query = (
+            "SELECT id, job_type, status, phase, progress, payload, result, error, "
+            "created_at, updated_at, started_at, finished_at FROM processing_jobs"
+        )
+        params = ()
+        if status:
+            query += " WHERE status = ?"
+            params = (status,)
+        query += " ORDER BY created_at, id"
+        with self.lock:
+            rows = self.conn.execute(query, params).fetchall()
+        return [self._job_from_row(row) for row in rows]
+
+    def claim_job(self, job_id: str):
+        with self.lock:
+            cursor = self.conn.execute(
+                "UPDATE processing_jobs SET status = 'processing', phase = 'starting', "
+                "progress = 1, started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP "
+                "WHERE id = ? AND status = 'queued'",
+                (job_id,),
+            )
+            self.conn.commit()
+            return cursor.rowcount == 1
+
+    def update_job(self, job_id: str, **changes):
+        allowed = {"status", "phase", "progress", "result", "error"}
+        changes = {key: value for key, value in changes.items() if key in allowed}
+        if not changes:
+            return
+        assignments = [f"{key} = ?" for key in changes]
+        values = [
+            json.dumps(value) if key == "result" and value is not None else value
+            for key, value in changes.items()
+        ]
+        assignments.append("updated_at = CURRENT_TIMESTAMP")
+        if changes.get("status") in {"completed", "failed", "cancelled"}:
+            assignments.append("finished_at = CURRENT_TIMESTAMP")
+        with self.lock:
+            self.conn.execute(
+                f"UPDATE processing_jobs SET {', '.join(assignments)} WHERE id = ?",
+                (*values, job_id),
+            )
+            self.conn.commit()
+
+    def cancel_job(self, job_id: str):
+        with self.lock:
+            cursor = self.conn.execute(
+                "UPDATE processing_jobs SET status = 'cancelled', phase = 'cancelled', "
+                "updated_at = CURRENT_TIMESTAMP, finished_at = CURRENT_TIMESTAMP "
+                "WHERE id = ? AND status = 'queued'",
+                (job_id,),
+            )
+            self.conn.commit()
+            return cursor.rowcount == 1
+
     def close(self):
         with self.lock:
             self.conn.close()

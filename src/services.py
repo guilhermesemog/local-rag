@@ -2,12 +2,8 @@ import json
 import logging
 
 from db.factory_db import get_vector_db
-from embedding_engine import EmbeddingEngine
 from document_parser import DocumentParser
-
-from templates import chat_template
-
-from llm.base import LLM
+from embedding_engine import EmbeddingEngine
 from errors import (
     AppError,
     DatabaseError,
@@ -15,7 +11,9 @@ from errors import (
     EmptyDocumentError,
     LLMProviderError,
 )
+from llm.base import LLM
 from settings import Settings, get_settings
+from templates import chat_template
 
 logger = logging.getLogger(__name__)
 
@@ -52,18 +50,21 @@ def build_llm(settings: Settings | None = None) -> LLM:
 
 
 class UploadService:
-    def __init__(self, file_path: str, db=None, engine=None):
+    def __init__(self, file_path: str, db=None, engine=None, progress_callback=None):
         self.file_path = file_path
         settings = get_settings()
         self.parser = DocumentParser(file_path, settings=settings)
         self.engine = engine or EmbeddingEngine(settings=settings)
         self.db = db or get_vector_db()
+        self.progress_callback = progress_callback or (lambda _phase, _progress: None)
 
     def insert_documents(self):
+        self.progress_callback("checking_index", 5)
         self.db.ensure_embedding_identity(self.engine.model_name, self.engine.dimension)
         try:
             if self.parser is None:
                 raise DocumentParseError()
+            self.progress_callback("parsing_pdf", 15)
             cleaned_docs = self.parser.clean_documents()
         except Exception as exc:
             if isinstance(exc, AppError):
@@ -75,12 +76,14 @@ class UploadService:
             raise EmptyDocumentError()
 
         try:
+            self.progress_callback("splitting_text", 35)
             content = self.parser.split_documents()
         except Exception as exc:
             logger.exception("PDF splitting failed")
             raise DocumentParseError() from exc
 
         texts = [doc.page_content for doc in content]
+        self.progress_callback("generating_embeddings", 55)
         embeddings = self.engine.generate_embeddings(texts)
 
         data_to_insert = []
@@ -101,6 +104,7 @@ class UploadService:
             )
 
         try:
+            self.progress_callback("indexing_chunks", 85)
             self.db.insert_documents(data_to_insert)
         except Exception as exc:
             logger.exception("Document insertion failed")
@@ -115,6 +119,7 @@ class LLMService:
         self.llm = llm
         self.db = db or get_vector_db()
         self.engine = embedding_engine or EmbeddingEngine(settings=get_settings())
+        self.progress_callback = lambda _phase, _progress: None
 
     def _query(self, query, top_k=5):
         query_embedding = self.engine.generate_embeddings([query])[0]
@@ -125,6 +130,7 @@ class LLMService:
             raise DatabaseError() from exc
 
     def answer(self, question: str):
+        self.progress_callback("checking_index", 5)
         self.db.ensure_embedding_identity(self.engine.model_name, self.engine.dimension)
         try:
             if self.db.is_empty():
@@ -135,11 +141,13 @@ class LLMService:
             logger.exception("Vector database availability check failed")
             raise DatabaseError() from exc
 
+        self.progress_callback("searching_documents", 30)
         similar_docs = self._query(question, top_k=6)
         context = "\n".join([doc.content for doc in similar_docs])
 
         prompt = chat_template.format(context=context, question=question)
         try:
+            self.progress_callback("generating_answer", 65)
             response = self.llm.generate_text(prompt)
         except Exception as exc:
             logger.exception("Language model generation failed")
@@ -156,6 +164,7 @@ class LLMService:
             }
             for doc in similar_docs
         ]
+        self.progress_callback("formatting_result", 90)
         return {"results": response, "sources": sources}
 
 

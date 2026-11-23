@@ -136,12 +136,16 @@ SQLite and PostgreSQL schemas are initialized through numbered SQL migrations wi
 You can interact with the API through the automatic documentation (Swagger UI) at `http://localhost:8000/docs`.
 
 1.  **PDF Upload**:
-    *   Use the `POST /upload-file` endpoint with a multipart `file` field to upload a PDF file (maximum size: 20 MiB).
+    *   Use the `POST /upload-file` endpoint with a multipart `file` field to upload a PDF file (maximum size: 20 MiB). It returns HTTP 202 with a task `id`; poll `GET /jobs/{id}` for processing progress and completion.
     *   The endpoint requires a `.pdf` filename, `application/pdf` MIME type, and a valid `%PDF-` signature. Invalid files return HTTP 400; files over the limit return HTTP 413.
 
 2.  **Ask Questions**:
-    *   Use `POST /query` with `{"question": "Your question here"}`.
-    *   Successful responses include `results` (answer text) and `sources` (document name, page, chunk, excerpt, and similarity for each retrieved passage).
+    *   Use `POST /query` with `{"question": "Your question here"}`. It returns HTTP 202 with a task `id`; poll `GET /jobs/{id}` until it completes.
+    *   A completed task contains `result.results` (answer text) and `result.sources` (document name, page, chunk, excerpt, and similarity for each retrieved passage). Failed tasks expose a safe `error` message.
+    *   Task states are `queued`, `processing`, `completed`, `failed`, or `cancelled`. `progress` is a coarse percentage and `phase` describes the current stage. `DELETE /jobs/{id}` cancels a task only while it is queued; tasks already running return HTTP 409.
+    *   `DELETE /database` returns HTTP 409 while any task is queued or processing, preventing a background task from repopulating a database that was just cleared.
+    *   Uploads and queries have separate single-worker queues, allowing queries to continue while a PDF is being indexed. Each queue accepts up to 20 waiting tasks; when full, new submissions return HTTP 503. The queue and task states use the configured SQLite or PostgreSQL database. After restart, queued tasks resume and interrupted running tasks are marked failed.
+    *   Staged PDFs are kept under `JOB_UPLOAD_DIR` until ingestion finishes (default: `data/uploads`; Docker Compose: `/data/uploads` in the persistent SQLite data volume).
 
 ### PDF parsing and OCR
 
