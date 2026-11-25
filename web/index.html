@@ -10,8 +10,8 @@
 
 <body>
     <h1 id="title">Local RAG</h1>
-    <section id="upload">
 
+    <section id="upload">
         <h2>Enter your PDF File</h2>
         <label class="fieldLabel" for="fileInput">PDF file</label>
         <input type="file" name="file" id="fileInput" accept=".pdf,application/pdf" />
@@ -25,40 +25,37 @@
         <div id="uploadLoading" class="hidden">
             <div class="spinner"></div>
         </div>
-
     </section>
+
+    <section id="documents" aria-labelledby="documentsHeading">
+        <h2 id="documentsHeading">Documents</h2>
+        <p id="documentSummary" role="status" aria-live="polite">No documents loaded.</p>
+        <ul id="documentsList" class="documentsList"></ul>
+        <p class="hint">
+            Select documents to restrict questions. Leave all unchecked to search every document.
+        </p>
+    </section>
+
     <section id="question">
-        <h2>Ask a question about your document</h2>
+        <h2>Ask a question about your documents</h2>
         <label class="fieldLabel" for="questionInput">Question</label>
-        <input type="text" id="questionInput" placeholder="What is this document about?" autocomplete="off" />
+        <input type="text" id="questionInput" placeholder="What is this document about?" autocomplete="off" maxlength="2000" />
+        <p id="filterSummary" class="filterSummary">Searching all documents.</p>
         <div>
             <button id="askButton" type="button">Ask</button>
         </div>
     </section>
 
-    <section id="answer" aria-labelledby="answerHeading" aria-busy="false">
-        <h3 id="answerHeading">Answer</h3>
-
-        <div id="queryProgress" class="progressRow hidden">
-            <progress id="queryProgressBar" max="100" value="0" aria-label="Answer progress"></progress>
-            <p id="queryPhase" class="phase" role="status" aria-live="polite"></p>
+    <section id="conversation" aria-labelledby="conversationHeading">
+        <div class="sectionHeader">
+            <h2 id="conversationHeading">Conversation</h2>
+            <button id="clearConversationButton" type="button" class="secondaryButton">
+                Clear conversation
+            </button>
         </div>
-
-        <div id="answerLoading" class="hidden">
-            <div class="spinner"></div>
-        </div>
-        <div id="answerContent" class="answerText"></div>
-
-        <div id="copyRow" class="copyRow hidden">
-            <button id="copyAnswerButton" type="button">Copy answer</button>
-        </div>
-
-        <section id="sourcesSection" class="sources hidden" aria-labelledby="sourcesHeading">
-            <h4 id="sourcesHeading">Sources</h4>
-            <ol id="sourcesList"></ol>
-        </section>
-
-        <p id="errorMessage" class="errorMessage hidden" role="alert"></p>
+        <p id="sessionLabel" class="sessionLabel"></p>
+        <ol id="conversationList" class="conversationList"></ol>
+        <p id="emptyConversation" class="emptyMessage">No questions yet.</p>
     </section>
 
     <section id="restart">
@@ -69,10 +66,12 @@
         <h3>This will clear all uploaded documents and start fresh.</h3>
     </section>
 
+    <input id="replaceFileInput" class="hidden" type="file" accept=".pdf,application/pdf" />
+
     <dialog id="adminKeyDialog" aria-labelledby="adminKeyTitle">
         <form method="dialog">
             <h2 id="adminKeyTitle">Administrator key required</h2>
-            <label for="adminKeyInput">Enter the key to clear the database.</label>
+            <label for="adminKeyInput">Enter the administrator key to continue.</label>
             <input id="adminKeyInput" type="password" autocomplete="off" required />
             <div class="dialogActions">
                 <button value="cancel" formnovalidate>Cancel</button>

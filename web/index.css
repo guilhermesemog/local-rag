@@ -6,6 +6,9 @@
     --border-color: #e4e4e7;
     --primary-color: #27272a;
     --primary-hover: #3f3f46;
+    --danger-color: #b91c1c;
+    --danger-bg: #fef2f2;
+    --danger-border: #fecaca;
     --radius: 8px;
     --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
 }
@@ -26,7 +29,7 @@ body {
     margin: 0 auto;
 }
 
-h1, h2, h3 {
+h1, h2, h3, h4 {
     color: var(--text-main);
     margin-bottom: 1rem;
 }
@@ -39,7 +42,7 @@ h1, h2, h3 {
     margin-top: 0;
 }
 
-#upload, #question, #answer {
+#upload, #documents, #question, #conversation {
     background-color: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
@@ -143,32 +146,160 @@ input:focus-visible {
     outline-offset: 2px;
 }
 
-/* Question Section */
+.secondaryButton {
+    background-color: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+}
+
+.secondaryButton:hover {
+    background-color: var(--border-color);
+}
+
+.sectionHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.sectionHeader h2 {
+    margin-bottom: 0;
+}
+
+/* Documents section */
+.documentsList {
+    list-style: none;
+    display: grid;
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+.documentItem {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 0.75rem 1rem;
+}
+
+.documentCheck {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.documentCheck input {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--primary-color);
+}
+
+.documentName {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.documentMeta {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.documentActions {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+.documentActions button {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.85rem;
+    background-color: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+}
+
+.documentActions button:hover {
+    background-color: var(--border-color);
+}
+
+.documentActions .dangerButton {
+    color: var(--danger-color);
+    border-color: var(--danger-border);
+}
+
+.documentActions .dangerButton:hover {
+    background-color: var(--danger-bg);
+}
+
+.hint,
+.filterSummary,
+.sessionLabel,
+.emptyMessage {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.filterSummary {
+    margin-top: 0.5rem;
+}
+
+.sessionLabel {
+    margin-bottom: 1rem;
+}
+
+/* Question section */
 #questionInput {
     margin-bottom: 1rem;
 }
 
-/* Answer Section */
-#answer {
-    min-height: auto;
+/* Conversation section */
+.conversationList {
+    list-style: none;
+    display: grid;
+    gap: 1rem;
 }
 
-#answer h3 {
-    margin-top: 0;
+.exchange {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 1rem;
+    background-color: #fafafa;
 }
 
-.answerText {
+.exchangeQuestion {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+    margin-bottom: 0.5rem;
+}
+
+.exchangeRole {
+    display: inline-block;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-right: 0.5rem;
+}
+
+.exchangeAnswer {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     line-height: 1.6;
 }
 
-.answerText:not(:empty) {
+.exchangeAnswer:not(:empty) {
     margin-top: 0.5rem;
 }
 
 .progressRow {
-    margin-bottom: 1rem;
+    margin: 0.75rem 0;
 }
 
 .progressRow progress {
@@ -189,7 +320,7 @@ input:focus-visible {
     margin-top: 1rem;
 }
 
-#copyAnswerButton {
+.copyRow button {
     padding: 0.5rem 1rem;
     font-size: 0.9rem;
 }
@@ -231,15 +362,15 @@ input:focus-visible {
 }
 
 .errorMessage {
-    background: #fef2f2;
-    border: 1px solid #fecaca;
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
     border-radius: var(--radius);
-    color: #b91c1c;
+    color: var(--danger-color);
     margin-top: 1rem;
     padding: 0.75rem 1rem;
 }
 
-/* Restart Section */
+/* Restart section */
 #restart {
     text-align: center;
     padding: 0;
@@ -266,7 +397,6 @@ input:focus-visible {
 
 #emptyMessage {
     text-align: center;
-    color: var(--text-muted);
     margin-top: 1rem;
     font-style: italic;
 }
@@ -279,14 +409,14 @@ input:focus-visible {
 }
 
 .status.error {
-    color: #b91c1c;
+    color: var(--danger-color);
 }
 
 .status.success {
     color: #166534;
 }
 
-#uploadLoading, #answerLoading, #restartLoading {
+#uploadLoading, #restartLoading {
     text-align: center;
     color: var(--text-muted);
     margin-top: 1rem;
@@ -302,16 +432,35 @@ input:focus-visible {
         margin-bottom: 1.5rem;
     }
 
-    #upload, #question, #answer {
+    #upload, #documents, #question, #conversation {
         padding: 1.25rem;
         margin-bottom: 1.25rem;
+    }
+
+    .sectionHeader {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .documentItem {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .documentActions {
+        width: 100%;
+        margin-left: 0;
+    }
+
+    .documentActions button {
+        flex: 1;
     }
 
     .copyRow {
         justify-content: stretch;
     }
 
-    #copyAnswerButton {
+    .copyRow button {
         width: 100%;
     }
 }
