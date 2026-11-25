@@ -13,9 +13,10 @@
     <section id="upload">
 
         <h2>Enter your PDF File</h2>
+        <label class="fieldLabel" for="fileInput">PDF file</label>
         <input type="file" name="file" id="fileInput" accept=".pdf,application/pdf" />
         <div>
-            <button id="uploadFileButton">Upload File</button>
+            <button id="uploadFileButton" type="button">Upload File</button>
         </div>
 
         <p id="emptyMessage">No documents uploaded yet.</p>
@@ -28,21 +29,40 @@
     </section>
     <section id="question">
         <h2>Ask a question about your document</h2>
+        <label class="fieldLabel" for="questionInput">Question</label>
         <input type="text" id="questionInput" placeholder="What is this document about?" autocomplete="off" />
         <div>
-            <button id="askButton">Ask</button>
+            <button id="askButton" type="button">Ask</button>
         </div>
     </section>
 
-    <div id="answer" aria-live="polite">
+    <section id="answer" aria-labelledby="answerHeading" aria-busy="false">
+        <h3 id="answerHeading">Answer</h3>
+
+        <div id="queryProgress" class="progressRow hidden">
+            <progress id="queryProgressBar" max="100" value="0" aria-label="Answer progress"></progress>
+            <p id="queryPhase" class="phase" role="status" aria-live="polite"></p>
+        </div>
+
         <div id="answerLoading" class="hidden">
             <div class="spinner"></div>
         </div>
-        <div id="answerContent"></div>
-    </div>
+        <div id="answerContent" class="answerText"></div>
+
+        <div id="copyRow" class="copyRow hidden">
+            <button id="copyAnswerButton" type="button">Copy answer</button>
+        </div>
+
+        <section id="sourcesSection" class="sources hidden" aria-labelledby="sourcesHeading">
+            <h4 id="sourcesHeading">Sources</h4>
+            <ol id="sourcesList"></ol>
+        </section>
+
+        <p id="errorMessage" class="errorMessage hidden" role="alert"></p>
+    </section>
 
     <section id="restart">
-        <button id="restartButton">Restart Documents</button>
+        <button id="restartButton" type="button">Restart Documents</button>
         <div id="restartLoading" class="hidden">
             <div class="spinner"></div>
         </div>

@@ -71,7 +71,14 @@ h1, h2, h3 {
     }
 }
 
-/* Upload Section */
+/* Form fields */
+.fieldLabel {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 0.75rem 0 0.35rem;
+}
+
 input[type="text"],
 input[type="file"],
 input[type="password"] {
@@ -130,35 +137,15 @@ button:disabled {
     cursor: not-allowed;
 }
 
+button:focus-visible,
+input:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
 /* Question Section */
 #questionInput {
     margin-bottom: 1rem;
-}
-
-#askButtons {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-    justify-content: center;
-}
-
-#askButtons > div {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 200px;
-}
-
-#askButtons button {
-    width: 100%;
-}
-
-#geminiInfo, #llamaInfo, #llamaResponseTime {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    margin-top: 0.5rem;
-    font-style: normal;
-    text-align: center;
 }
 
 /* Answer Section */
@@ -168,6 +155,88 @@ button:disabled {
 
 #answer h3 {
     margin-top: 0;
+}
+
+.answerText {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.6;
+}
+
+.answerText:not(:empty) {
+    margin-top: 0.5rem;
+}
+
+.progressRow {
+    margin-bottom: 1rem;
+}
+
+.progressRow progress {
+    width: 100%;
+    height: 0.5rem;
+    accent-color: var(--primary-color);
+}
+
+.phase {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+}
+
+.copyRow {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1rem;
+}
+
+#copyAnswerButton {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+}
+
+.sources {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.sources h4 {
+    margin-bottom: 0.75rem;
+}
+
+.sources ol {
+    display: grid;
+    gap: 1rem;
+    padding-left: 1.25rem;
+}
+
+.sources li {
+    overflow-wrap: anywhere;
+}
+
+.sourceMeta {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin: 0.25rem 0 0.5rem;
+}
+
+.sources blockquote {
+    border-left: 3px solid var(--border-color);
+    padding-left: 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    max-height: 8rem;
+    overflow: auto;
+}
+
+.errorMessage {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: var(--radius);
+    color: #b91c1c;
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
 }
 
 /* Restart Section */
@@ -221,4 +290,34 @@ button:disabled {
     text-align: center;
     color: var(--text-muted);
     margin-top: 1rem;
+}
+
+@media (max-width: 640px) {
+    body {
+        padding: 1rem;
+    }
+
+    #title {
+        font-size: 1.75rem;
+        margin-bottom: 1.5rem;
+    }
+
+    #upload, #question, #answer {
+        padding: 1.25rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .copyRow {
+        justify-content: stretch;
+    }
+
+    #copyAnswerButton {
+        width: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .spinner {
+        animation: none;
+    }
 }
