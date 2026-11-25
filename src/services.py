@@ -10,12 +10,43 @@ from errors import (
     DocumentParseError,
     EmptyDocumentError,
     LLMProviderError,
+    NoMatchingDocumentsError,
 )
 from llm.base import LLM
 from settings import Settings, get_settings
 from templates import chat_template
 
 logger = logging.getLogger(__name__)
+
+MAX_HISTORY_TURNS = 4
+MAX_HISTORY_TURN_CHARS = 2000
+MAX_HISTORY_CONTEXT_CHARS = 6000
+
+
+def _history_text(history) -> str:
+    if not history:
+        return "No previous messages."
+
+    turns = []
+    total = 0
+    for turn in list(history)[-MAX_HISTORY_TURNS:]:
+        if isinstance(turn, dict):
+            question = turn.get("question")
+            answer = turn.get("answer")
+        else:
+            question = getattr(turn, "question", None)
+            answer = getattr(turn, "answer", None)
+        question = str(question or "").strip()[:MAX_HISTORY_TURN_CHARS]
+        answer = str(answer or "").strip()[:MAX_HISTORY_TURN_CHARS]
+        if not question or not answer:
+            continue
+        block = f"User: {question}\nAssistant: {answer}"
+        if total + len(block) > MAX_HISTORY_CONTEXT_CHARS:
+            break
+        turns.append(block)
+        total += len(block)
+
+    return "\n\n".join(turns) if turns else "No previous messages."
 
 
 def build_llm(settings: Settings | None = None) -> LLM:
@@ -59,7 +90,7 @@ class UploadService:
         self.db = db or get_vector_db()
         self.progress_callback = progress_callback or (lambda _phase, _progress: None)
 
-    def insert_documents(self):
+    def insert_documents(self, replace_document_id: str | None = None):
         self.progress_callback("checking_index", 5)
         self.db.ensure_embedding_identity(self.engine.model_name, self.engine.dimension)
         try:
@@ -106,7 +137,10 @@ class UploadService:
 
         try:
             self.progress_callback("indexing_chunks", 85)
-            self.db.insert_documents(data_to_insert)
+            if replace_document_id:
+                self.db.replace_documents(replace_document_id, data_to_insert)
+            else:
+                self.db.insert_documents(data_to_insert)
         except Exception as exc:
             logger.error("Document insertion failed (%s)", type(exc).__name__)
             raise DatabaseError() from exc
@@ -122,10 +156,14 @@ class LLMService:
         self.engine = embedding_engine or EmbeddingEngine(settings=get_settings())
         self.progress_callback = lambda _phase, _progress: None
 
-    def _query(self, query, top_k=5):
+    def _query(self, query, top_k=5, document_ids=None):
         query_embedding = self.engine.generate_embeddings([query])[0]
         try:
-            return self.db.search(query_embedding, limit=top_k)
+            return self.db.search(
+                query_embedding,
+                limit=top_k,
+                document_ids=document_ids,
+            )
         except Exception as exc:
             logger.error("Document search failed (%s)", type(exc).__name__)
             raise DatabaseError() from exc
@@ -144,7 +182,7 @@ class LLMService:
             for doc in similar_docs
         ]
 
-    def _retrieve(self, question: str):
+    def _retrieve(self, question: str, document_ids=None, history=None):
         self.progress_callback("checking_index", 5)
         self.db.ensure_embedding_identity(self.engine.model_name, self.engine.dimension)
         try:
@@ -159,14 +197,26 @@ class LLMService:
             raise DatabaseError() from exc
 
         self.progress_callback("searching_documents", 30)
-        similar_docs = self._query(question, top_k=6)
-        context = "\n".join([doc.content for doc in similar_docs])
+        similar_docs = self._query(question, top_k=6, document_ids=document_ids)
+        if not similar_docs:
+            if document_ids:
+                raise NoMatchingDocumentsError()
+            raise EmptyDocumentError()
 
-        prompt = chat_template.format(context=context, question=question)
+        context = "\n".join([doc.content for doc in similar_docs])
+        prompt = chat_template.format(
+            context=context,
+            history=_history_text(history),
+            question=question,
+        )
         return prompt, self._sources(similar_docs)
 
-    def answer(self, question: str):
-        prompt, sources = self._retrieve(question)
+    def answer(self, question: str, document_ids=None, history=None):
+        prompt, sources = self._retrieve(
+            question,
+            document_ids=document_ids,
+            history=history,
+        )
         try:
             self.progress_callback("generating_answer", 65)
             response = self.llm.generate_text(prompt)
@@ -177,9 +227,13 @@ class LLMService:
         self.progress_callback("formatting_result", 90)
         return {"results": response, "sources": sources}
 
-    def answer_stream(self, question: str):
+    def answer_stream(self, question: str, document_ids=None, history=None):
         """Yield sources first, then answer fragments as the provider produces them."""
-        prompt, sources = self._retrieve(question)
+        prompt, sources = self._retrieve(
+            question,
+            document_ids=document_ids,
+            history=history,
+        )
         yield {"type": "sources", "sources": sources}
         self.progress_callback("generating_answer", 65)
         try:
@@ -202,6 +256,27 @@ class DBService:
             return self.db.is_empty()
         except Exception as exc:
             logger.error("Vector database status check failed (%s)", type(exc).__name__)
+            raise DatabaseError() from exc
+
+    def list_documents(self):
+        try:
+            return self.db.list_documents()
+        except Exception as exc:
+            logger.error("Document listing failed (%s)", type(exc).__name__)
+            raise DatabaseError() from exc
+
+    def document_exists(self, document_id: str) -> bool:
+        try:
+            return self.db.document_exists(document_id)
+        except Exception as exc:
+            logger.error("Document lookup failed (%s)", type(exc).__name__)
+            raise DatabaseError() from exc
+
+    def delete_documents(self, document_ids: list[str]) -> int:
+        try:
+            return self.db.delete_documents(document_ids)
+        except Exception as exc:
+            logger.error("Document deletion failed (%s)", type(exc).__name__)
             raise DatabaseError() from exc
 
     def clear_database(self):

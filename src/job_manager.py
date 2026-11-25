@@ -213,14 +213,21 @@ class JobManager:
                 engine=get_embedding_engine(),
                 progress_callback=progress,
             )
-            service.insert_documents()
+            service.insert_documents(
+                replace_document_id=job["payload"].get("replace_document_id")
+            )
             return {"status": "Documents inserted into the vector database."}
 
         service = LLMService(self.llm, embedding_engine=get_embedding_engine())
         service.progress_callback = progress
         parts = []
         sources = []
-        for event in service.answer_stream(job["payload"]["question"]):
+        payload = job["payload"]
+        for event in service.answer_stream(
+            payload["question"],
+            document_ids=payload.get("document_ids"),
+            history=payload.get("history"),
+        ):
             if event["type"] == "sources":
                 sources = event["sources"]
                 self.streams.publish(job_id, event)
