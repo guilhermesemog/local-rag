@@ -10,6 +10,8 @@ The system processes documents, generates vector embeddings, and stores them in 
 *   **REST API**: Simple interface built with FastAPI for upload and queries.
 *   **Web Interface:** There's a simple web interface built to communicate with the system effortlessly.
 *   **Progressive answers**: The web interface streams answers as they are generated, shows sources by page, and offers a copy button.
+*   **Local conversation history**: The interface keeps a per-session transcript in the browser, reuses recent turns as context, and lets you clear the conversation without touching the document index.
+*   **Document selection**: Questions can be filtered to one or more indexed documents, and the interface shows document/chunk counts plus remove/replace actions.
 
 ## Demo
 
@@ -142,11 +144,20 @@ You can interact with the API through the automatic documentation (Swagger UI) a
 
 2.  **Ask Questions**:
     *   Use `POST /query` with `{"question": "Your question here"}`. It returns HTTP 202 with a task `id`; poll `GET /jobs/{id}` until it completes.
+    *   Add `"document_ids": ["<id>", "..."]` to restrict retrieval to selected documents; omit it or send an empty list to search the whole index. Add `"history": [{"question": "...", "answer": "..."}]` to provide up to four previous turns as conversation context. The web interface fills both fields automatically.
     *   A completed task contains `result.results` (answer text) and `result.sources` (document name, page, chunk, excerpt, and similarity for each retrieved passage). Failed tasks expose a safe `error` message.
     *   Task states are `queued`, `processing`, `completed`, `failed`, or `cancelled`. `progress` is a coarse percentage and `phase` describes the current stage. `DELETE /jobs/{id}` cancels a task only while it is queued; tasks already running return HTTP 409.
     *   `DELETE /database` returns HTTP 409 while any task is queued or processing, preventing a background task from repopulating a database that was just cleared. Both this endpoint and `DELETE /jobs/{id}` require the `X-Admin-Key` header.
     *   Uploads and queries have separate single-worker queues, allowing queries to continue while a PDF is being indexed. Each queue accepts up to 20 waiting tasks; when full, new submissions return HTTP 503. The queue and task states use the configured SQLite or PostgreSQL database. After restart, queued tasks resume and interrupted running tasks are marked failed.
     *   Staged PDFs are kept under `JOB_UPLOAD_DIR` until ingestion finishes (default: `data/uploads`; Docker Compose: `/data/uploads` in the persistent SQLite data volume).
+
+### Documents and conversation history
+
+*   `GET /documents` lists indexed documents with their chunk and page counts, plus the totals shown by the interface.
+*   `DELETE /documents/{id}` removes all chunks of one document. It requires `X-Admin-Key`, returns `404` when the document is not indexed, and reports the number of removed chunks.
+*   `POST /documents/{id}/replace` accepts a multipart `file` field, requires `X-Admin-Key`, and returns HTTP 202 with an upload task. The new PDF is processed first; the old chunks are replaced atomically when the job succeeds, so a failed replacement leaves the previous document intact. A document's identity is the `document_id` stored in its chunk metadata.
+*   Conversation history is stored in the browser's `localStorage`, keyed by a generated session identifier. The last four completed exchanges are sent with each question; at most 50 exchanges are kept per session. **Clear conversation** removes only that local transcript and starts a new session; it does not delete documents or embeddings. Clearing site data also clears the transcript.
+*   Changing documents or filters does not erase the conversation. Filters are stored separately from the document index and are pruned automatically when a selected document is removed. Clearing the document index does not erase the local transcript either.
 
 ### Streaming answers
 
@@ -159,7 +170,7 @@ You can interact with the API through the automatic documentation (Swagger UI) a
 
 Set a unique `ADMIN_API_KEY` generated from at least 32 random bytes through the deployment environment or its secret manager to enable database clearing and task cancellation. There is no built-in key; when it is unset, these actions fail closed with HTTP 503. For local development, a value may be placed in the ignored `.env` file, but never commit it. The web interface requests the key when clearing the database and keeps it only in memory for that request. The Compose listener serves plain HTTP; put public deployments behind a trusted TLS-terminating reverse proxy and never send the admin key over plain HTTP.
 
-Rate limits are per client IP and per process: 5 uploads, 20 queries, 10 administrative actions, and 120 status reads per minute. Excess requests receive HTTP 429 with `Retry-After`. The service uses the direct connection IP and does not trust `X-Forwarded-For`; deployments behind a proxy must configure a trusted proxy setup before relying on per-client limits. Set `CORS_ALLOWED_ORIGINS` to a comma-separated allowlist for cross-origin development or deployment; same-origin Docker usage does not require CORS. PDF files remain limited to 20 MiB, with multipart overhead capped at 64 KiB and upload body receipt limited to 300 seconds. Query bodies are capped at 32 KiB and 30 seconds; questions are limited to 2,000 characters. Gemini uses `GEMINI_REQUEST_TIMEOUT` (30 seconds by default), Ollama uses `OLLAMA_REQUEST_TIMEOUT` (120 seconds), and Transformers output is limited to 512 generated tokens.
+Rate limits are per client IP and per process: 5 uploads, 20 queries, 10 administrative actions, and 120 status reads per minute. Excess requests receive HTTP 429 with `Retry-After`. The service uses the direct connection IP and does not trust `X-Forwarded-For`; deployments behind a proxy must configure a trusted proxy setup before relying on per-client limits. Set `CORS_ALLOWED_ORIGINS` to a comma-separated allowlist for cross-origin development or deployment; same-origin Docker usage does not require CORS. PDF files remain limited to 20 MiB, with multipart overhead capped at 64 KiB and upload body receipt limited to 300 seconds. Query bodies are capped at 64 KiB and 30 seconds; questions are limited to 2,000 characters, document filters to 50 identifiers, and conversation history to four turns totaling 6,000 characters. Gemini uses `GEMINI_REQUEST_TIMEOUT` (30 seconds by default), Ollama uses `OLLAMA_REQUEST_TIMEOUT` (120 seconds), and Transformers output is limited to 512 generated tokens.
 
 ### PDF parsing and OCR
 
