@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -105,6 +105,11 @@ def require_admin(x_admin_key: str | None = Header(default=None)):
 MAX_UPLOAD_SIZE = 20 * 1024 * 1024
 PDF_SIGNATURE = b"%PDF-"
 UPLOAD_CHUNK_SIZE = 1024 * 1024
+SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
 
 
 @app.post("/upload-file", status_code=202)
@@ -181,12 +186,46 @@ def query_llm(request: QueryRequest):
     return public_job(job)
 
 
+@app.post("/query/stream")
+def query_stream(request: QueryRequest):
+    if DBService().check_empty():
+        raise HTTPException(
+            status_code=400, detail="Upload a document before querying."
+        )
+    job_id = uuid.uuid4().hex
+    try:
+        job = app.state.job_manager.submit(
+            job_id,
+            "query",
+            {"question": request.question},
+        )
+    except JobQueueFull as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return StreamingResponse(
+        app.state.job_manager.stream_events(job_id, initial_job=job),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )
+
+
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str):
     job = app.state.job_manager.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Processing task not found.")
     return public_job(job)
+
+
+@app.get("/jobs/{job_id}/stream")
+def stream_job(job_id: str):
+    job = app.state.job_manager.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Processing task not found.")
+    return StreamingResponse(
+        app.state.job_manager.stream_events(job_id, initial_job=job),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )
 
 
 @app.delete("/jobs/{job_id}", dependencies=[Depends(require_admin)])

@@ -130,7 +130,21 @@ class LLMService:
             logger.error("Document search failed (%s)", type(exc).__name__)
             raise DatabaseError() from exc
 
-    def answer(self, question: str):
+    @staticmethod
+    def _sources(similar_docs):
+        return [
+            {
+                "document_id": doc.metadata.get("document_id"),
+                "document_name": doc.metadata.get("document_name"),
+                "page": doc.metadata.get("page"),
+                "chunk": doc.metadata.get("chunk"),
+                "text": doc.content,
+                "similarity": doc.similarity,
+            }
+            for doc in similar_docs
+        ]
+
+    def _retrieve(self, question: str):
         self.progress_callback("checking_index", 5)
         self.db.ensure_embedding_identity(self.engine.model_name, self.engine.dimension)
         try:
@@ -149,6 +163,10 @@ class LLMService:
         context = "\n".join([doc.content for doc in similar_docs])
 
         prompt = chat_template.format(context=context, question=question)
+        return prompt, self._sources(similar_docs)
+
+    def answer(self, question: str):
+        prompt, sources = self._retrieve(question)
         try:
             self.progress_callback("generating_answer", 65)
             response = self.llm.generate_text(prompt)
@@ -156,19 +174,23 @@ class LLMService:
             logger.error("Language model generation failed (%s)", type(exc).__name__)
             raise LLMProviderError() from exc
 
-        sources = [
-            {
-                "document_id": doc.metadata.get("document_id"),
-                "document_name": doc.metadata.get("document_name"),
-                "page": doc.metadata.get("page"),
-                "chunk": doc.metadata.get("chunk"),
-                "text": doc.content,
-                "similarity": doc.similarity,
-            }
-            for doc in similar_docs
-        ]
         self.progress_callback("formatting_result", 90)
         return {"results": response, "sources": sources}
+
+    def answer_stream(self, question: str):
+        """Yield sources first, then answer fragments as the provider produces them."""
+        prompt, sources = self._retrieve(question)
+        yield {"type": "sources", "sources": sources}
+        self.progress_callback("generating_answer", 65)
+        try:
+            for text in self.llm.stream_text(prompt):
+                if text:
+                    yield {"type": "token", "text": text}
+        except Exception as exc:
+            logger.error("Language model stream failed (%s)", type(exc).__name__)
+            raise LLMProviderError() from exc
+
+        self.progress_callback("formatting_result", 90)
 
 
 class DBService:

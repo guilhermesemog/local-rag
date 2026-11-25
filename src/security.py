@@ -13,14 +13,17 @@ RATE_LIMIT_WINDOW_SECONDS = 60
 _RATE_POLICIES = {
     ("POST", "/upload-file"): ("upload", 5),
     ("POST", "/query"): ("query", 20),
+    ("POST", "/query/stream"): ("query", 20),
     ("DELETE", "/database"): ("admin", 10),
     ("DELETE", "/jobs/{job_id}"): ("admin", 10),
     ("GET", "/database"): ("read", 120),
     ("GET", "/jobs/{job_id}"): ("read", 120),
+    ("GET", "/jobs/{job_id}/stream"): ("read", 120),
 }
 _BODY_LIMITS = {
     ("POST", "/upload-file"): (20 * 1024 * 1024 + 64 * 1024, 300),
     ("POST", "/query"): (32 * 1024, 30),
+    ("POST", "/query/stream"): (32 * 1024, 30),
     ("DELETE", "/database"): (8 * 1024, 30),
 }
 
@@ -96,6 +99,8 @@ class RateLimitMiddleware:
         segments = path.strip("/").split("/")
         if len(segments) == 2 and segments[0] == "jobs":
             return _RATE_POLICIES.get((method, "/jobs/{job_id}"))
+        if len(segments) == 3 and segments[0] == "jobs" and segments[2] == "stream":
+            return _RATE_POLICIES.get((method, "/jobs/{job_id}/stream"))
         return None
 
 
