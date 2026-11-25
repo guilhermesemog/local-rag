@@ -745,6 +745,10 @@ Permitir consultas contextuais e comparações entre documentos.
 
 O sistema oferece navegação clara entre documentos e sessões.
 
+**Implementação:** a interface mantém um identificador de sessão e um histórico local em `localStorage`, enviando até quatro turnos recentes como contexto. A lista de documentos exibe contagens de documentos e chunks, permite filtrar consultas por documento, remover documentos e substituir um PDF de forma atômica, com ações administrativas protegidas por `X-Admin-Key`. A conversa pode ser limpa separadamente do índice, e o histórico não é apagado ao limpar o banco.
+
+**Conclusão:** confirmada em 2026-11-25 pelo usuário após os testes manuais (perguntas sucessivas, troca e filtro de documentos, limpeza da conversa, limpeza do banco e reinício da aplicação) e automatizados. A navegação entre documentos e sessões, a persistência local do histórico e a separação entre conversa e banco global foram validadas.
+
 ---
 
 # Etapa 16 — Publicação da demonstração
