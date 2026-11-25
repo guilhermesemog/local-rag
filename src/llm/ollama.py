@@ -24,3 +24,16 @@ class OllamaLLM(base.LLM):
     def generate_text(self, prompt: str) -> str:
         response = self.client.invoke(prompt)
         return response
+
+    def stream_text(self, prompt: str):
+        stream = getattr(self.client, "stream", None)
+        if stream is None:
+            yield self.generate_text(prompt)
+            return
+        try:
+            for chunk in stream(prompt):
+                text = getattr(chunk, "content", chunk)
+                if isinstance(text, str) and text:
+                    yield text
+        except (AttributeError, NotImplementedError):
+            yield self.generate_text(prompt)
