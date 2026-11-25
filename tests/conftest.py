@@ -47,11 +47,19 @@ def api_client(monkeypatch, sqlite_db, tmp_path):
     from fastapi.testclient import TestClient
 
     monkeypatch.setenv("LLM_MODEL", "dummy")
+    monkeypatch.setenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5500,http://127.0.0.1:5500",
+    )
+    from pydantic import SecretStr
+
     import app
     import job_manager
     from llm.dummy import DummyLLM
 
     monkeypatch.setattr(app, "llm", DummyLLM())
+    monkeypatch.setattr(app.settings, "admin_api_key", SecretStr("test-admin-key"))
+    app.rate_limiter.reset()
 
     class FakeEmbeddingEngine:
         model_name = "test-embedding"

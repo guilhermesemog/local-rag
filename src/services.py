@@ -37,6 +37,7 @@ def build_llm(settings: Settings | None = None) -> LLM:
             model_name=settings.ollama_model,
             base_url=settings.ollama_base_url,
             temperature=settings.ollama_temperature,
+            request_timeout=settings.ollama_request_timeout,
         )
     if settings.llm_model == "dummy":
         from llm.dummy import DummyLLM
@@ -69,7 +70,7 @@ class UploadService:
         except Exception as exc:
             if isinstance(exc, AppError):
                 raise
-            logger.exception("PDF parsing failed")
+            logger.error("PDF parsing failed (%s)", type(exc).__name__)
             raise DocumentParseError() from exc
 
         if not cleaned_docs:
@@ -79,7 +80,7 @@ class UploadService:
             self.progress_callback("splitting_text", 35)
             content = self.parser.split_documents()
         except Exception as exc:
-            logger.exception("PDF splitting failed")
+            logger.error("PDF splitting failed (%s)", type(exc).__name__)
             raise DocumentParseError() from exc
 
         texts = [doc.page_content for doc in content]
@@ -107,7 +108,7 @@ class UploadService:
             self.progress_callback("indexing_chunks", 85)
             self.db.insert_documents(data_to_insert)
         except Exception as exc:
-            logger.exception("Document insertion failed")
+            logger.error("Document insertion failed (%s)", type(exc).__name__)
             raise DatabaseError() from exc
         return True
 
@@ -126,7 +127,7 @@ class LLMService:
         try:
             return self.db.search(query_embedding, limit=top_k)
         except Exception as exc:
-            logger.exception("Document search failed")
+            logger.error("Document search failed (%s)", type(exc).__name__)
             raise DatabaseError() from exc
 
     def answer(self, question: str):
@@ -138,7 +139,9 @@ class LLMService:
         except EmptyDocumentError:
             raise
         except Exception as exc:
-            logger.exception("Vector database availability check failed")
+            logger.error(
+                "Vector database availability check failed (%s)", type(exc).__name__
+            )
             raise DatabaseError() from exc
 
         self.progress_callback("searching_documents", 30)
@@ -150,7 +153,7 @@ class LLMService:
             self.progress_callback("generating_answer", 65)
             response = self.llm.generate_text(prompt)
         except Exception as exc:
-            logger.exception("Language model generation failed")
+            logger.error("Language model generation failed (%s)", type(exc).__name__)
             raise LLMProviderError() from exc
 
         sources = [
@@ -176,12 +179,12 @@ class DBService:
         try:
             return self.db.is_empty()
         except Exception as exc:
-            logger.exception("Vector database status check failed")
+            logger.error("Vector database status check failed (%s)", type(exc).__name__)
             raise DatabaseError() from exc
 
     def clear_database(self):
         try:
             self.db.delete_all_documents()
         except Exception as exc:
-            logger.exception("Vector database cleanup failed")
+            logger.error("Vector database cleanup failed (%s)", type(exc).__name__)
             raise DatabaseError() from exc

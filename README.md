@@ -143,9 +143,15 @@ You can interact with the API through the automatic documentation (Swagger UI) a
     *   Use `POST /query` with `{"question": "Your question here"}`. It returns HTTP 202 with a task `id`; poll `GET /jobs/{id}` until it completes.
     *   A completed task contains `result.results` (answer text) and `result.sources` (document name, page, chunk, excerpt, and similarity for each retrieved passage). Failed tasks expose a safe `error` message.
     *   Task states are `queued`, `processing`, `completed`, `failed`, or `cancelled`. `progress` is a coarse percentage and `phase` describes the current stage. `DELETE /jobs/{id}` cancels a task only while it is queued; tasks already running return HTTP 409.
-    *   `DELETE /database` returns HTTP 409 while any task is queued or processing, preventing a background task from repopulating a database that was just cleared.
+    *   `DELETE /database` returns HTTP 409 while any task is queued or processing, preventing a background task from repopulating a database that was just cleared. Both this endpoint and `DELETE /jobs/{id}` require the `X-Admin-Key` header.
     *   Uploads and queries have separate single-worker queues, allowing queries to continue while a PDF is being indexed. Each queue accepts up to 20 waiting tasks; when full, new submissions return HTTP 503. The queue and task states use the configured SQLite or PostgreSQL database. After restart, queued tasks resume and interrupted running tasks are marked failed.
     *   Staged PDFs are kept under `JOB_UPLOAD_DIR` until ingestion finishes (default: `data/uploads`; Docker Compose: `/data/uploads` in the persistent SQLite data volume).
+
+### Security configuration
+
+Set a unique `ADMIN_API_KEY` generated from at least 32 random bytes through the deployment environment or its secret manager to enable database clearing and task cancellation. There is no built-in key; when it is unset, these actions fail closed with HTTP 503. For local development, a value may be placed in the ignored `.env` file, but never commit it. The web interface requests the key when clearing the database and keeps it only in memory for that request. The Compose listener serves plain HTTP; put public deployments behind a trusted TLS-terminating reverse proxy and never send the admin key over plain HTTP.
+
+Rate limits are per client IP and per process: 5 uploads, 20 queries, 10 administrative actions, and 120 status reads per minute. Excess requests receive HTTP 429 with `Retry-After`. The service uses the direct connection IP and does not trust `X-Forwarded-For`; deployments behind a proxy must configure a trusted proxy setup before relying on per-client limits. Set `CORS_ALLOWED_ORIGINS` to a comma-separated allowlist for cross-origin development or deployment; same-origin Docker usage does not require CORS. PDF files remain limited to 20 MiB, with multipart overhead capped at 64 KiB and upload body receipt limited to 300 seconds. Query bodies are capped at 32 KiB and 30 seconds; questions are limited to 2,000 characters. Gemini uses `GEMINI_REQUEST_TIMEOUT` (30 seconds by default), Ollama uses `OLLAMA_REQUEST_TIMEOUT` (120 seconds), and Transformers output is limited to 512 generated tokens.
 
 ### PDF parsing and OCR
 

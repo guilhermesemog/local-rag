@@ -48,6 +48,18 @@
         </div>
         <h3>This will clear all uploaded documents and start fresh.</h3>
     </section>
+
+    <dialog id="adminKeyDialog" aria-labelledby="adminKeyTitle">
+        <form method="dialog">
+            <h2 id="adminKeyTitle">Administrator key required</h2>
+            <label for="adminKeyInput">Enter the key to clear the database.</label>
+            <input id="adminKeyInput" type="password" autocomplete="off" required />
+            <div class="dialogActions">
+                <button value="cancel" formnovalidate>Cancel</button>
+                <button value="confirm">Continue</button>
+            </div>
+        </form>
+    </dialog>
     <script src="script.js"></script>
 </body>
 

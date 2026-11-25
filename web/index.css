@@ -73,7 +73,8 @@ h1, h2, h3 {
 
 /* Upload Section */
 input[type="text"],
-input[type="file"] {
+input[type="file"],
+input[type="password"] {
     width: 100%;
     padding: 0.75rem;
     border: 1px solid var(--border-color);
@@ -81,6 +82,26 @@ input[type="file"] {
     font-size: 1rem;
     transition: border-color 0.2s;
     background-color: #fff;
+}
+
+dialog {
+    margin: auto;
+    width: min(90vw, 28rem);
+    padding: 1.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+dialog::backdrop {
+    background: rgb(0 0 0 / 0.45);
+}
+
+.dialogActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1rem;
 }
 
 input[type="text"]:focus {

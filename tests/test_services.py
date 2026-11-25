@@ -1,9 +1,9 @@
 import pytest
 
+from db.vector_db import SearchResult
 from errors import EmptyDocumentError, IndexCompatibilityError, LLMProviderError
 from llm.dummy import DummyLLM
 from services import LLMService
-from db.vector_db import SearchResult
 
 
 class FakeDB:
@@ -56,10 +56,11 @@ def test_search_result_normalizes_json_string_metadata():
     assert result.metadata == {"document_name": "old.pdf", "page": 1}
 
 
-def test_llm_provider_failure_is_mapped():
+def test_llm_provider_failure_is_mapped_without_logging_provider_content(caplog):
     class BrokenLLM:
         def generate_text(self, _prompt):
             raise RuntimeError("secret")
 
     with pytest.raises(LLMProviderError):
         LLMService(BrokenLLM(), FakeEngine(), FakeDB()).answer("question")
+    assert "secret" not in caplog.text

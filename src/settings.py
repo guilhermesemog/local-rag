@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3"
     ollama_base_url: str = "http://localhost:11434"
     ollama_temperature: float = 0.7
+    ollama_request_timeout: float = 120
     transformers_model: str | None = None
 
     db_option: Literal["sqlite", "postgres"] = "sqlite"
@@ -37,6 +38,8 @@ class Settings(BaseSettings):
     postgres_pool_min: int = 1
     postgres_pool_max: int = 8
     job_upload_dir: str = str(PROJECT_ROOT / "data" / "uploads")
+    admin_api_key: SecretStr | None = None
+    cors_allowed_origins: str = "http://localhost:5500,http://127.0.0.1:5500"
 
     embedding_model: str = "all-MiniLM-L6-v2"
     embedding_dimension: int = 384
@@ -74,8 +77,14 @@ class Settings(BaseSettings):
                 "POSTGRES_POOL_MAX must be greater than or equal to "
                 "POSTGRES_POOL_MIN, and both must be positive"
             )
-        if self.gemini_request_timeout <= 0 or self.gemini_retries < 0:
-            raise ValueError("Gemini timeout must be positive and retries non-negative")
+        if (
+            self.gemini_request_timeout <= 0
+            or self.gemini_retries < 0
+            or self.ollama_request_timeout <= 0
+        ):
+            raise ValueError(
+                "Provider timeouts must be positive and retries non-negative"
+            )
         if not 0 <= self.ollama_temperature <= 2:
             raise ValueError("OLLAMA_TEMPERATURE must be between 0 and 2")
         if self.db_port < 1 or self.db_port > 65535:

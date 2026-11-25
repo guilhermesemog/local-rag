@@ -1,6 +1,7 @@
-from sentence_transformers import SentenceTransformer
-from functools import lru_cache
 import logging
+from functools import lru_cache
+
+from sentence_transformers import SentenceTransformer
 
 from errors import EmbeddingError
 from settings import Settings, get_settings
@@ -46,9 +47,9 @@ class EmbeddingEngine:
                     f"Unexpected embedding dimension: {embeddings.shape[1]}"
                 )
 
-        except Exception as e:
-            logger.exception("Embedding generation failed")
-            raise EmbeddingError() from e
+        except Exception as exc:
+            logger.error("Embedding generation failed (%s)", type(exc).__name__)
+            raise EmbeddingError() from exc
 
         return embeddings.tolist()
 

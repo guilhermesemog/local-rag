@@ -25,7 +25,7 @@ def get_vector_db():
             dimension=settings.embedding_dimension,
         )
     except Exception as exc:
-        logger.exception("Vector database initialization failed")
+        logger.error("Vector database initialization failed (%s)", type(exc).__name__)
         raise DatabaseError() from exc
 
 

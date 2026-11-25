@@ -657,6 +657,10 @@ Reduzir riscos antes de publicar uma demonstração pública.
 
 A aplicação possui barreiras básicas contra uso indevido antes de ser publicada.
 
+**Implementação:** rotas administrativas usam `X-Admin-Key` sem credencial padrão; rate limits por IP, CORS explícito, limites de tamanho e duração e revisão de logs/secrets foram concluídos.
+
+**Conclusão:** confirmada em 2026-11-25 pelo usuário após os testes manuais e automatizados. As barreiras administrativas, limites de requisição, configuração CORS e exposição segura de erros foram validadas.
+
 ---
 
 # Etapa 14 — Streaming e melhoria da interface

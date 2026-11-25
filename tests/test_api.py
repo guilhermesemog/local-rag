@@ -3,7 +3,13 @@ def test_empty_query_and_database_clear(api_client):
     assert response.status_code == 400
     assert "detail" in response.json()
     assert api_client.get("/database").json() == {"is_empty": True}
-    assert api_client.delete("/database").status_code == 200
+    assert api_client.delete("/database").status_code == 401
+    assert (
+        api_client.delete(
+            "/database", headers={"X-Admin-Key": "test-admin-key"}
+        ).status_code
+        == 200
+    )
 
 
 def test_upload_rejects_invalid_pdf(api_client):
@@ -63,9 +69,57 @@ def test_job_not_found_and_cancel(api_client):
     manager.db.create_job(
         {"id": "cancel-me", "job_type": "query", "payload": {"question": "x"}}
     )
-    response = api_client.delete("/jobs/cancel-me")
+    response = api_client.delete(
+        "/jobs/cancel-me", headers={"X-Admin-Key": "test-admin-key"}
+    )
     assert response.status_code == 200
     assert response.json()["status"] == "cancelled"
+
+
+def test_admin_actions_are_disabled_when_key_is_not_configured(api_client, monkeypatch):
+    import app
+
+    monkeypatch.setattr(app.settings, "admin_api_key", None)
+    response = api_client.delete("/database", headers={"X-Admin-Key": "anything"})
+    assert response.status_code == 503
+    assert "ADMIN_API_KEY" in response.json()["detail"]
+
+
+def test_wrong_admin_key_is_rejected(api_client):
+    response = api_client.delete("/database", headers={"X-Admin-Key": "wrong"})
+    assert response.status_code == 401
+
+
+def test_query_rejects_blank_or_oversized_question(api_client):
+    assert api_client.post("/query", json={"question": "  "}).status_code == 422
+    assert api_client.post("/query", json={"question": "x" * 2001}).status_code == 422
+    assert (
+        api_client.post(
+            "/query", json={"question": "ok", "unused_payload": "x"}
+        ).status_code
+        == 422
+    )
+
+
+def test_cors_allows_configured_local_origin_only(api_client):
+    allowed = api_client.options(
+        "/query",
+        headers={
+            "Origin": "http://localhost:5500",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert allowed.headers["access-control-allow-origin"] == "http://localhost:5500"
+
+    denied = api_client.options(
+        "/query",
+        headers={
+            "Origin": "https://attacker.example",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert "access-control-allow-origin" not in denied.headers
 
 
 def test_query_returns_background_job_with_answer(api_client, sqlite_db):

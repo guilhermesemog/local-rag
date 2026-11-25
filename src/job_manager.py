@@ -116,8 +116,13 @@ class JobManager:
                         phase="failed",
                         error=exc.public_message,
                     )
-                except Exception:
-                    logger.exception("Background %s job failed (%s)", job_type, job_id)
+                except Exception as exc:  # noqa: BLE001 - persist unexpected job failures
+                    logger.error(
+                        "Background %s job failed (%s, %s)",
+                        job_type,
+                        job_id,
+                        type(exc).__name__,
+                    )
                     self.db.update_job(
                         job_id,
                         status="failed",
@@ -162,7 +167,7 @@ class JobManager:
                         return
                     path.unlink(missing_ok=True)
                 except OSError:
-                    logger.warning("Could not remove staged upload %s", path)
+                    logger.warning("Could not remove staged upload")
 
 
 def public_job(job: dict):

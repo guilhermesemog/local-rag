@@ -13,6 +13,8 @@ const restartLoading = document.getElementById('restartLoading');
 
 const emptyMessage = document.getElementById('emptyMessage');
 const appStatus = document.getElementById('appStatus');
+const adminKeyDialog = document.getElementById('adminKeyDialog');
+const adminKeyInput = document.getElementById('adminKeyInput');
 
 const baseURL = window.location.origin;
 let databaseIsEmpty = true;
@@ -37,6 +39,20 @@ async function readJson(response) {
     } catch {
         return {};
     }
+}
+
+function requestAdminKey() {
+    return new Promise((resolve) => {
+        adminKeyInput.value = '';
+        adminKeyDialog.addEventListener('close', () => {
+            const key = adminKeyDialog.returnValue === 'confirm'
+                ? adminKeyInput.value
+                : null;
+            adminKeyInput.value = '';
+            resolve(key);
+        }, { once: true });
+        adminKeyDialog.showModal();
+    });
 }
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -209,12 +225,19 @@ questionInput.addEventListener('keydown', (event) => {
 });
 
 restartButton.addEventListener('click', async () => {
-    setLoading(restartLoading, true);
-    restartButton.disabled = true;
+    let adminKey = null;
 
     try {
+        adminKey = await requestAdminKey();
+        if (!adminKey) {
+            return;
+        }
+        setLoading(restartLoading, true);
+        restartButton.disabled = true;
+
         const response = await fetch(`${baseURL}/database`, {
             method: 'DELETE',
+            headers: { 'X-Admin-Key': adminKey },
         });
         const data = await readJson(response);
 
@@ -232,6 +255,8 @@ restartButton.addEventListener('click', async () => {
         console.error('Clear database failed:', error);
         updateControls();
     } finally {
+        adminKey = null;
+        adminKeyInput.value = '';
         setLoading(restartLoading, false);
     }
 });

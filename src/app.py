@@ -1,17 +1,19 @@
 import logging
 import uuid
 from contextlib import asynccontextmanager
+from hmac import compare_digest
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from db.factory_db import close_vector_db
 from errors import AppError
 from job_manager import JobManager, JobQueueFull, public_job
+from security import RateLimiter, RateLimitMiddleware, RequestLimitsMiddleware
 from services import DBService, build_llm
 from settings import get_settings
 
@@ -35,6 +37,7 @@ async def lifespan(_app):
 
 
 app = FastAPI(lifespan=lifespan)
+rate_limiter = RateLimiter()
 
 
 @app.exception_handler(AppError)
@@ -47,7 +50,7 @@ async def handle_app_error(_request, exc: AppError):
 
 @app.exception_handler(Exception)
 async def handle_unexpected_error(_request, exc: Exception):
-    logger.exception("Unhandled API error", exc_info=exc)
+    logger.error("Unhandled API error (%s)", type(exc).__name__)
     return JSONResponse(
         status_code=500,
         content={"detail": "An unexpected server error occurred."},
@@ -55,30 +58,48 @@ async def handle_unexpected_error(_request, exc: Exception):
 
 
 origins = [
-    "null",
-    "http://localhost",
-    "http://localhost:8002",
-    "http://localhost:5500",
-    "http://127.0.0.1",
-    "http://127.0.0.1:5500",
-    "http://0.0.0.0",
-    "http://0.0.0.0:8002",
-    "http://127.0.0.1",
-    "http://127.0.0.1:8002",
+    origin.strip()
+    for origin in settings.cors_allowed_origins.split(",")
+    if origin.strip()
 ]
 
+app.add_middleware(RequestLimitsMiddleware)
+app.add_middleware(RateLimitMiddleware, limiter=rate_limiter)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "X-Admin-Key"],
 )
 
 
 class QueryRequest(BaseModel):
-    question: str
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("question", mode="before")
+    @classmethod
+    def strip_question(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
+def require_admin(x_admin_key: str | None = Header(default=None)):
+    expected = settings.admin_api_key
+    if expected is None or not expected.get_secret_value():
+        raise HTTPException(
+            status_code=503,
+            detail="Administrative actions are unavailable until ADMIN_API_KEY is configured.",
+        )
+    if x_admin_key is None or not compare_digest(
+        x_admin_key.encode("utf-8"), expected.get_secret_value().encode("utf-8")
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="A valid X-Admin-Key header is required.",
+        )
 
 
 MAX_UPLOAD_SIZE = 20 * 1024 * 1024
@@ -168,7 +189,7 @@ def get_job(job_id: str):
     return public_job(job)
 
 
-@app.delete("/jobs/{job_id}")
+@app.delete("/jobs/{job_id}", dependencies=[Depends(require_admin)])
 def cancel_job(job_id: str):
     job = app.state.job_manager.get(job_id)
     if job is None:
@@ -182,7 +203,7 @@ def cancel_job(job_id: str):
     return public_job(job)
 
 
-@app.delete("/database")
+@app.delete("/database", dependencies=[Depends(require_admin)])
 def clear_database():
     if not app.state.job_manager.clear_database_if_idle():
         raise HTTPException(
