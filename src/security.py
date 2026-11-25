@@ -14,7 +14,10 @@ _RATE_POLICIES = {
     ("POST", "/upload-file"): ("upload", 5),
     ("POST", "/query"): ("query", 20),
     ("POST", "/query/stream"): ("query", 20),
+    ("GET", "/documents"): ("read", 120),
     ("DELETE", "/database"): ("admin", 10),
+    ("DELETE", "/documents/{document_id}"): ("admin", 10),
+    ("POST", "/documents/{document_id}/replace"): ("upload", 5),
     ("DELETE", "/jobs/{job_id}"): ("admin", 10),
     ("GET", "/database"): ("read", 120),
     ("GET", "/jobs/{job_id}"): ("read", 120),
@@ -22,8 +25,12 @@ _RATE_POLICIES = {
 }
 _BODY_LIMITS = {
     ("POST", "/upload-file"): (20 * 1024 * 1024 + 64 * 1024, 300),
-    ("POST", "/query"): (32 * 1024, 30),
-    ("POST", "/query/stream"): (32 * 1024, 30),
+    ("POST", "/query"): (64 * 1024, 30),
+    ("POST", "/query/stream"): (64 * 1024, 30),
+    ("POST", "/documents/{document_id}/replace"): (
+        20 * 1024 * 1024 + 64 * 1024,
+        300,
+    ),
     ("DELETE", "/database"): (8 * 1024, 30),
 }
 
@@ -101,6 +108,14 @@ class RateLimitMiddleware:
             return _RATE_POLICIES.get((method, "/jobs/{job_id}"))
         if len(segments) == 3 and segments[0] == "jobs" and segments[2] == "stream":
             return _RATE_POLICIES.get((method, "/jobs/{job_id}/stream"))
+        if len(segments) == 2 and segments[0] == "documents":
+            return _RATE_POLICIES.get((method, "/documents/{document_id}"))
+        if (
+            len(segments) == 3
+            and segments[0] == "documents"
+            and segments[2] == "replace"
+        ):
+            return _RATE_POLICIES.get((method, "/documents/{document_id}/replace"))
         return None
 
 
@@ -166,6 +181,13 @@ class RequestLimitsMiddleware:
         segments = path.strip("/").split("/")
         if method == "DELETE" and len(segments) == 2 and segments[0] == "jobs":
             return 8 * 1024, 30
+        if (
+            method == "POST"
+            and len(segments) == 3
+            and segments[0] == "documents"
+            and segments[2] == "replace"
+        ):
+            return _BODY_LIMITS.get((method, "/documents/{document_id}/replace"))
         return None
 
     @staticmethod

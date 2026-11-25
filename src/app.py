@@ -1,4 +1,5 @@
 import logging
+import re
 import uuid
 from contextlib import asynccontextmanager
 from hmac import compare_digest
@@ -8,7 +9,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from db.factory_db import close_vector_db
 from errors import AppError
@@ -75,15 +76,75 @@ app.add_middleware(
 )
 
 
+DOCUMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+MAX_DOCUMENT_FILTERS = 50
+MAX_HISTORY_TURNS = 4
+MAX_HISTORY_TEXT_CHARS = 6000
+
+
+class HistoryTurn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(min_length=1, max_length=2000)
+    answer: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("question", "answer", mode="before")
+    @classmethod
+    def strip_history_field(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
 class QueryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: str = Field(min_length=1, max_length=2000)
+    document_ids: list[str] | None = Field(
+        default=None, max_length=MAX_DOCUMENT_FILTERS
+    )
+    history: list[HistoryTurn] | None = Field(
+        default=None, max_length=MAX_HISTORY_TURNS
+    )
 
     @field_validator("question", mode="before")
     @classmethod
     def strip_question(cls, value):
         return value.strip() if isinstance(value, str) else value
+
+    @field_validator("document_ids")
+    @classmethod
+    def normalize_document_ids(cls, value):
+        if value is None:
+            return None
+        cleaned = []
+        for item in value:
+            item = item.strip() if isinstance(item, str) else item
+            if not isinstance(item, str) or not DOCUMENT_ID_PATTERN.fullmatch(item):
+                raise ValueError("Invalid document id.")
+            if item not in cleaned:
+                cleaned.append(item)
+        return cleaned or None
+
+    @field_validator("history", mode="before")
+    @classmethod
+    def normalize_history(cls, value):
+        return None if value == [] else value
+
+    @model_validator(mode="after")
+    def validate_history_size(self):
+        if self.history:
+            total = sum(len(turn.question) + len(turn.answer) for turn in self.history)
+            if total > MAX_HISTORY_TEXT_CHARS:
+                raise ValueError("Conversation history is too long.")
+        return self
+
+    def job_payload(self) -> dict:
+        return {
+            "question": self.question,
+            "document_ids": self.document_ids,
+            "history": (
+                [turn.model_dump() for turn in self.history] if self.history else None
+            ),
+        }
 
 
 def require_admin(x_admin_key: str | None = Header(default=None)):
@@ -112,8 +173,7 @@ SSE_HEADERS = {
 }
 
 
-@app.post("/upload-file", status_code=202)
-async def upload_file(file: UploadFile | None = None):
+async def _stage_pdf(file: UploadFile | None) -> Path:
     if file is None or not file.filename:
         raise HTTPException(status_code=400, detail="A PDF file is required.")
     if Path(file.filename).suffix.lower() != ".pdf":
@@ -125,11 +185,10 @@ async def upload_file(file: UploadFile | None = None):
         )
 
     temp_file_path = Path(settings.job_upload_dir) / f"{uuid.uuid4().hex}.pdf"
-    total_size = 0
-    signature = b""
-    queued = False
     try:
         temp_file_path.parent.mkdir(parents=True, exist_ok=True)
+        total_size = 0
+        signature = b""
         with temp_file_path.open("wb") as temp_file:
             while True:
                 chunk = await file.read(UPLOAD_CHUNK_SIZE)
@@ -151,22 +210,83 @@ async def upload_file(file: UploadFile | None = None):
                 status_code=400,
                 detail="The uploaded file does not have a valid PDF signature.",
             )
-
-        job_id = uuid.uuid4().hex
-        try:
-            job = app.state.job_manager.submit(
-                job_id,
-                "upload",
-                {"file_path": str(temp_file_path)},
-            )
-        except JobQueueFull as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        queued = True
-        return public_job(job)
+        return temp_file_path
+    except Exception:
+        temp_file_path.unlink(missing_ok=True)
+        raise
     finally:
-        if not queued:
-            temp_file_path.unlink(missing_ok=True)
         await file.close()
+
+
+@app.post("/upload-file", status_code=202)
+async def upload_file(file: UploadFile | None = None):
+    temp_file_path = await _stage_pdf(file)
+    try:
+        job = app.state.job_manager.submit(
+            uuid.uuid4().hex,
+            "upload",
+            {"file_path": str(temp_file_path)},
+        )
+    except JobQueueFull as exc:
+        temp_file_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception:
+        temp_file_path.unlink(missing_ok=True)
+        raise
+    return public_job(job)
+
+
+def _validate_document_id(document_id: str):
+    if not DOCUMENT_ID_PATTERN.fullmatch(document_id):
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+
+@app.get("/documents")
+def list_documents():
+    documents = DBService().list_documents()
+    return {
+        "documents": documents,
+        "document_count": len(documents),
+        "chunk_count": sum(document["chunks"] for document in documents),
+    }
+
+
+@app.delete("/documents/{document_id}", dependencies=[Depends(require_admin)])
+def delete_document(document_id: str):
+    _validate_document_id(document_id)
+    deleted_chunks = DBService().delete_documents([document_id])
+    if deleted_chunks == 0:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    return {"status": "Document removed.", "deleted_chunks": deleted_chunks}
+
+
+@app.post(
+    "/documents/{document_id}/replace",
+    status_code=202,
+    dependencies=[Depends(require_admin)],
+)
+async def replace_document(document_id: str, file: UploadFile | None = None):
+    _validate_document_id(document_id)
+    if not DBService().document_exists(document_id):
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    temp_file_path = await _stage_pdf(file)
+    try:
+        job = app.state.job_manager.submit(
+            uuid.uuid4().hex,
+            "upload",
+            {
+                "file_path": str(temp_file_path),
+                "replace_document_id": document_id,
+            },
+        )
+    except JobQueueFull as exc:
+        temp_file_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception:
+        temp_file_path.unlink(missing_ok=True)
+        raise
+    return public_job(job)
 
 
 @app.post("/query", status_code=202)
@@ -179,7 +299,7 @@ def query_llm(request: QueryRequest):
         job = app.state.job_manager.submit(
             uuid.uuid4().hex,
             "query",
-            {"question": request.question},
+            request.job_payload(),
         )
     except JobQueueFull as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -197,7 +317,7 @@ def query_stream(request: QueryRequest):
         job = app.state.job_manager.submit(
             job_id,
             "query",
-            {"question": request.question},
+            request.job_payload(),
         )
     except JobQueueFull as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
