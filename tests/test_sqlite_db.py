@@ -29,6 +29,115 @@ def test_postgres_insert_search_clear(postgres_db, fake_embeddings):
     assert postgres_db.is_empty()
 
 
+def _document_metadata(document_id, document_name, page=1, chunk=1):
+    return {
+        "document_id": document_id,
+        "document_name": document_name,
+        "page": page,
+        "chunk": chunk,
+    }
+
+
+def test_sqlite_lists_filters_and_removes_documents(sqlite_db, fake_embeddings):
+    sqlite_db.insert_documents(
+        [
+            ("a1", _document_metadata("doc-a", "a.pdf", 1, 1), fake_embeddings[0]),
+            ("a2", _document_metadata("doc-a", "a.pdf", 2, 2), fake_embeddings[0]),
+            ("b1", _document_metadata("doc-b", "b.pdf", 1, 1), fake_embeddings[0]),
+        ]
+    )
+
+    documents = sqlite_db.list_documents()
+    by_id = {document["document_id"]: document for document in documents}
+    assert by_id["doc-a"]["document_name"] == "a.pdf"
+    assert by_id["doc-a"]["chunks"] == 2
+    assert by_id["doc-a"]["pages"] == 2
+    assert by_id["doc-b"]["chunks"] == 1
+    assert sqlite_db.document_exists("doc-a") is True
+    assert sqlite_db.document_exists("missing") is False
+
+    filtered = sqlite_db.search(
+        fake_embeddings[0],
+        limit=6,
+        document_ids=["doc-a"],
+    )
+    assert {result.content for result in filtered} == {"a1", "a2"}
+
+    assert sqlite_db.delete_documents(["doc-b"]) == 1
+    assert sqlite_db.document_exists("doc-b") is False
+    assert sqlite_db.delete_documents(["missing"]) == 0
+
+
+def test_sqlite_lists_legacy_chunks_as_unidentified(sqlite_db, fake_embeddings):
+    sqlite_db.insert_documents([("legacy", {}, fake_embeddings[0])])
+
+    assert sqlite_db.list_documents() == [
+        {
+            "document_id": "",
+            "document_name": "Unidentified chunks",
+            "chunks": 1,
+            "pages": 0,
+        }
+    ]
+    assert sqlite_db.document_exists("") is False
+
+
+def test_sqlite_replaces_documents_atomically(sqlite_db, fake_embeddings):
+    sqlite_db.insert_documents(
+        [
+            ("old", _document_metadata("doc-old", "old.pdf"), fake_embeddings[0]),
+            ("other", _document_metadata("doc-other", "other.pdf"), fake_embeddings[0]),
+        ]
+    )
+
+    deleted = sqlite_db.replace_documents(
+        "doc-old",
+        [
+            (
+                "new",
+                _document_metadata("doc-new", "new.pdf"),
+                fake_embeddings[0],
+            )
+        ],
+    )
+
+    assert deleted == 1
+    assert sqlite_db.document_exists("doc-old") is False
+    assert sqlite_db.document_exists("doc-new") is True
+    assert sqlite_db.document_exists("doc-other") is True
+
+    with pytest.raises(IndexCompatibilityError):
+        sqlite_db.replace_documents(
+            "doc-new",
+            [("broken", _document_metadata("doc-new", "new.pdf"), [1.0])],
+        )
+    assert sqlite_db.document_exists("doc-new") is True
+
+
+def test_postgres_lists_filters_and_removes_documents(postgres_db, fake_embeddings):
+    postgres_db.insert_documents(
+        [
+            ("a1", _document_metadata("doc-a", "a.pdf", 1, 1), fake_embeddings[0]),
+            ("a2", _document_metadata("doc-a", "a.pdf", 2, 2), fake_embeddings[0]),
+            ("b1", _document_metadata("doc-b", "b.pdf", 1, 1), fake_embeddings[0]),
+        ]
+    )
+
+    by_id = {
+        document["document_id"]: document for document in postgres_db.list_documents()
+    }
+    assert by_id["doc-a"]["chunks"] == 2
+    assert by_id["doc-a"]["pages"] == 2
+    assert [
+        result.content
+        for result in postgres_db.search(
+            fake_embeddings[0], limit=6, document_ids=["doc-b"]
+        )
+    ] == ["b1"]
+    assert postgres_db.delete_documents(["doc-a"]) == 2
+    assert postgres_db.document_exists("doc-b") is True
+
+
 def test_sqlite_embedding_identity_blocks_model_switch(sqlite_db, fake_embeddings):
     sqlite_db.ensure_embedding_identity("model-a", 384)
     sqlite_db.insert_documents([("legacy vector", {}, fake_embeddings[0])])

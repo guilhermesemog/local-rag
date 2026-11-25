@@ -11,6 +11,7 @@ from services import LLMService
 class FakeDB:
     def __init__(self, empty=False):
         self.empty = empty
+        self.searches = []
 
     def is_empty(self):
         return self.empty
@@ -18,7 +19,8 @@ class FakeDB:
     def ensure_embedding_identity(self, _model_name, _dimension):
         return None
 
-    def search(self, *_args, **_kwargs):
+    def search(self, _vector, limit=None, document_ids=None):
+        self.searches.append(document_ids)
         return [
             SearchResult(
                 "context",
@@ -65,10 +67,18 @@ def test_dummy_stream_matches_generate_text():
 
 
 def test_answer_stream_emits_sources_then_tokens():
-    service = LLMService(DummyLLM(), FakeEngine(), FakeDB())
+    database = FakeDB()
+    service = LLMService(DummyLLM(), FakeEngine(), database)
 
-    events = list(service.answer_stream("question"))
+    events = list(
+        service.answer_stream(
+            "question",
+            document_ids=["doc-1"],
+            history=[{"question": "earlier", "answer": "reply"}],
+        )
+    )
 
+    assert database.searches == [["doc-1"]]
     assert events[0]["type"] == "sources"
     assert events[0]["sources"][0]["document_name"] == "sample.pdf"
     assert events[0]["sources"][0]["page"] == 2

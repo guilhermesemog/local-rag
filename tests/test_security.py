@@ -31,6 +31,12 @@ def test_rate_limit_middleware_maps_protected_routes_to_policies():
     assert RateLimitMiddleware._policy("POST", "/upload-file/") == ("upload", 5)
     assert RateLimitMiddleware._policy("POST", "/query") == ("query", 20)
     assert RateLimitMiddleware._policy("POST", "/query/stream") == ("query", 20)
+    assert RateLimitMiddleware._policy("GET", "/documents") == ("read", 120)
+    assert RateLimitMiddleware._policy("DELETE", "/documents/doc-1") == ("admin", 10)
+    assert RateLimitMiddleware._policy("POST", "/documents/doc-1/replace") == (
+        "upload",
+        5,
+    )
     assert RateLimitMiddleware._policy("GET", "/jobs/abc123") == ("read", 120)
     assert RateLimitMiddleware._policy("GET", "/jobs/abc123/stream") == ("read", 120)
     assert RateLimitMiddleware._policy("DELETE", "/database") == ("admin", 10)
@@ -78,8 +84,12 @@ def test_request_limits_bound_upload_and_query_body_sizes():
         20 * 1024 * 1024 + 64 * 1024,
         300,
     )
-    assert RequestLimitsMiddleware._limits("POST", "/query") == (32 * 1024, 30)
-    assert RequestLimitsMiddleware._limits("POST", "/query/stream") == (32 * 1024, 30)
+    assert RequestLimitsMiddleware._limits("POST", "/query") == (64 * 1024, 30)
+    assert RequestLimitsMiddleware._limits("POST", "/query/stream") == (64 * 1024, 30)
+    assert RequestLimitsMiddleware._limits("POST", "/documents/doc-1/replace") == (
+        20 * 1024 * 1024 + 64 * 1024,
+        300,
+    )
     assert RequestLimitsMiddleware._limits("GET", "/health") is None
 
 
@@ -89,7 +99,7 @@ def test_request_limits_reject_a_large_body_before_route_handling():
         "type": "http",
         "method": "POST",
         "path": "/query",
-        "headers": [(b"content-length", b"32769")],
+        "headers": [(b"content-length", b"65537")],
     }
     sent = []
 
