@@ -9,6 +9,7 @@ The system processes documents, generates vector embeddings, and stores them in 
 *   **LLM Integration**: Google Gemini, Ollama, Hugging Face Transformers, or a no-credentials dummy provider for initial setup.
 *   **REST API**: Simple interface built with FastAPI for upload and queries.
 *   **Web Interface:** There's a simple web interface built to communicate with the system effortlessly.
+*   **Progressive answers**: The web interface streams answers as they are generated, shows sources by page, and offers a copy button.
 
 ## Demo
 
@@ -146,6 +147,13 @@ You can interact with the API through the automatic documentation (Swagger UI) a
     *   `DELETE /database` returns HTTP 409 while any task is queued or processing, preventing a background task from repopulating a database that was just cleared. Both this endpoint and `DELETE /jobs/{id}` require the `X-Admin-Key` header.
     *   Uploads and queries have separate single-worker queues, allowing queries to continue while a PDF is being indexed. Each queue accepts up to 20 waiting tasks; when full, new submissions return HTTP 503. The queue and task states use the configured SQLite or PostgreSQL database. After restart, queued tasks resume and interrupted running tasks are marked failed.
     *   Staged PDFs are kept under `JOB_UPLOAD_DIR` until ingestion finishes (default: `data/uploads`; Docker Compose: `/data/uploads` in the persistent SQLite data volume).
+
+### Streaming answers
+
+*   `POST /query/stream` creates the same background query task and responds with `text/event-stream`. The events are `job`, `phase`, `sources`, `token`, `done`, and `error`; `sources` is sent as soon as retrieval finishes, before generation starts.
+*   `GET /jobs/{id}/stream` follows or replays an existing task, so the interface can reconnect after a reload. If the in-memory channel is unavailable (for example after a restart), the endpoint falls back to the persisted task state.
+*   The web interface prefers the streaming endpoint and falls back to `POST /query` polling when streaming is unavailable. Closing the tab does not cancel the task; cancellation still applies only to queued tasks.
+*   Streaming buffers live in memory, so the API must run as one process (the Compose setup does). Put public deployments behind a proxy configured to disable response buffering; the API sends `X-Accel-Buffering: no` and periodic heartbeat comments.
 
 ### Security configuration
 
