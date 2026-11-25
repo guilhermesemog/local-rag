@@ -1,3 +1,6 @@
+import json
+
+
 def test_empty_query_and_database_clear(api_client):
     response = api_client.post("/query", json={"question": "hello"})
     assert response.status_code == 400
@@ -123,8 +126,6 @@ def test_cors_allows_configured_local_origin_only(api_client):
 
 
 def test_query_returns_background_job_with_answer(api_client, sqlite_db):
-    import json
-
     sqlite_db.ensure_embedding_identity("test-embedding", 384)
     sqlite_db.insert_documents(
         [("sample context", json.dumps({"document_name": "sample.pdf"}), [1.0] * 384)]
@@ -180,6 +181,84 @@ def test_query_worker_runs_while_upload_worker_is_busy(
     assert _wait_for_job(api_client, upload.json()["id"])["status"] == "completed"
 
 
+def _parse_sse(text):
+    frames = []
+    for block in text.split("\n\n"):
+        event = "message"
+        data_lines = []
+        for line in block.split("\n"):
+            if not line or line.startswith(":"):
+                continue
+            if line.startswith("event:"):
+                event = line[len("event:") :].strip()
+            elif line.startswith("data:"):
+                data_lines.append(line[len("data:") :].strip())
+        if data_lines:
+            frames.append({"event": event, "data": json.loads("\n".join(data_lines))})
+    return frames
+
+
+def test_query_stream_emits_progressive_events(api_client, sqlite_db):
+    sqlite_db.ensure_embedding_identity("test-embedding", 384)
+    sqlite_db.insert_documents(
+        [
+            (
+                "sample context",
+                json.dumps({"document_name": "sample.pdf", "page": 2}),
+                [1.0] * 384,
+            )
+        ]
+    )
+
+    response = api_client.post("/query/stream", json={"question": "What is this?"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+    frames = _parse_sse(response.text)
+    events = [frame["event"] for frame in frames]
+    assert events[0] == "job"
+    assert "sources" in events
+    assert "token" in events
+    assert events[-1] == "done"
+
+    done = frames[-1]["data"]
+    assert done["results"] == "This is a dummy response."
+    assert done["sources"][0]["document_name"] == "sample.pdf"
+
+
+def test_query_stream_requires_documents(api_client):
+    response = api_client.post("/query/stream", json={"question": "hello"})
+
+    assert response.status_code == 400
+    assert "detail" in response.json()
+    assert api_client.post("/query/stream", json={"question": "  "}).status_code == 422
+
+
+def test_job_stream_replays_completed_result(api_client):
+    manager = api_client.app.state.job_manager
+    manager.db.create_job(
+        {"id": "completed-job", "job_type": "query", "payload": {"question": "x"}}
+    )
+    manager.db.update_job(
+        "completed-job",
+        status="completed",
+        phase="completed",
+        progress=100,
+        result={"results": "cached answer", "sources": []},
+    )
+
+    response = api_client.get("/jobs/completed-job/stream")
+
+    assert response.status_code == 200
+    frames = _parse_sse(response.text)
+    assert frames[0]["event"] == "job"
+    assert frames[-1]["event"] == "done"
+    assert frames[-1]["data"]["results"] == "cached answer"
+
+    assert api_client.get("/jobs/missing/stream").status_code == 404
+
+
 def test_health_and_web_interface_are_served_from_api(api_client):
     health = api_client.get("/health")
     home = api_client.get("/")
@@ -189,5 +268,8 @@ def test_health_and_web_interface_are_served_from_api(api_client):
     assert health.json() == {"status": "ok"}
     assert home.status_code == 200
     assert "Local RAG" in home.text
+    assert "copyAnswerButton" in home.text
+    assert "queryProgressBar" in home.text
     assert script.status_code == 200
     assert "window.location.origin" in script.text
+    assert "/query/stream" in script.text

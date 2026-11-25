@@ -30,7 +30,9 @@ def test_rate_limit_middleware_maps_protected_routes_to_policies():
     assert RateLimitMiddleware._policy("POST", "/upload-file") == ("upload", 5)
     assert RateLimitMiddleware._policy("POST", "/upload-file/") == ("upload", 5)
     assert RateLimitMiddleware._policy("POST", "/query") == ("query", 20)
+    assert RateLimitMiddleware._policy("POST", "/query/stream") == ("query", 20)
     assert RateLimitMiddleware._policy("GET", "/jobs/abc123") == ("read", 120)
+    assert RateLimitMiddleware._policy("GET", "/jobs/abc123/stream") == ("read", 120)
     assert RateLimitMiddleware._policy("DELETE", "/database") == ("admin", 10)
     assert RateLimitMiddleware._policy("GET", "/health") is None
 
@@ -77,6 +79,7 @@ def test_request_limits_bound_upload_and_query_body_sizes():
         300,
     )
     assert RequestLimitsMiddleware._limits("POST", "/query") == (32 * 1024, 30)
+    assert RequestLimitsMiddleware._limits("POST", "/query/stream") == (32 * 1024, 30)
     assert RequestLimitsMiddleware._limits("GET", "/health") is None
 
 
