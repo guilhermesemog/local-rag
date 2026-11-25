@@ -701,6 +701,10 @@ Transformar a interface em uma experiência moderna de RAG.
 
 A interface demonstra claramente o valor do projeto e continua utilizável em diferentes tamanhos.
 
+**Implementação:** respostas são transmitidas por SSE (`POST /query/stream` e `GET /jobs/{id}/stream`) com suporte nos quatro providers, fontes por página exibidas antes da geração, barra de progresso com fases, botão de copiar, estados acessíveis por teclado, feedback visual de erro e layout responsivo. O fallback para o polling de `/query` foi preservado e o resultado final continua persistido no job.
+
+**Conclusão:** confirmada em 2026-11-25 pelo usuário após os testes manuais (perguntas curta e longa, fontes durante o streaming, desktop e celular, teclado/leitor de tela e cópia da resposta) e automatizados. O streaming e as melhorias de interface foram validados.
+
 ---
 
 # Etapa 15 — História de conversas e seleção de documentos
