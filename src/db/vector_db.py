@@ -45,8 +45,29 @@ class VectorDB(ABC):
         """Atomically persist (content, metadata, embedding) rows."""
 
     @abstractmethod
-    def search(self, query_vector: list[float], limit: int) -> list[SearchResult]:
+    def search(
+        self,
+        query_vector: list[float],
+        limit: int,
+        document_ids: list[str] | None = None,
+    ) -> list[SearchResult]:
         """Return matches using the shared SearchResult contract."""
+
+    @abstractmethod
+    def list_documents(self) -> list[dict[str, Any]]:
+        """Return indexed documents with chunk and page counts."""
+
+    @abstractmethod
+    def document_exists(self, document_id: str) -> bool:
+        pass
+
+    @abstractmethod
+    def delete_documents(self, document_ids: list[str]) -> int:
+        """Delete chunks for the given documents and return the row count."""
+
+    @abstractmethod
+    def replace_documents(self, document_id: str, data: list[tuple]) -> int:
+        """Replace one document's chunks atomically and return the old count."""
 
     @abstractmethod
     def delete_all_documents(self):

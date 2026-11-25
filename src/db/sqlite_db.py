@@ -11,6 +11,16 @@ from errors import IndexCompatibilityError
 MIGRATION_DIR = Path(__file__).parent / "migrations" / "sqlite"
 
 
+def _metadata_dict(metadata) -> dict:
+    if isinstance(metadata, dict):
+        return metadata
+    try:
+        parsed = json.loads(metadata or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 class SQLiteVectorDB(VectorDB):
     def __init__(self, db_path: str = "sqlite.db", dimension: int = 384):
         self.dimension = dimension
@@ -71,21 +81,23 @@ class SQLiteVectorDB(VectorDB):
         if len(vector) != self.dimension:
             raise IndexCompatibilityError()
 
+    def _serialize_rows(self, data: list[tuple]):
+        rows = []
+        for content, metadata, embedding in data:
+            self.validate_vector_dimension(embedding)
+            rows.append(
+                (
+                    content,
+                    json.dumps(metadata) if not isinstance(metadata, str) else metadata,
+                    np.asarray(embedding, dtype=np.float32).tobytes(),
+                )
+            )
+        return rows
+
     def insert_documents(self, data: list[tuple]):
+        rows = self._serialize_rows(data)
         with self.lock:
             try:
-                rows = []
-                for content, metadata, embedding in data:
-                    self.validate_vector_dimension(embedding)
-                    rows.append(
-                        (
-                            content,
-                            json.dumps(metadata)
-                            if not isinstance(metadata, str)
-                            else metadata,
-                            np.asarray(embedding, dtype=np.float32).tobytes(),
-                        )
-                    )
                 self.conn.executemany(
                     "INSERT INTO documents(content, metadata, embedding) VALUES (?, ?, ?)",
                     rows,
@@ -95,17 +107,29 @@ class SQLiteVectorDB(VectorDB):
                 self.conn.rollback()
                 raise
 
-    def search(self, query_vector: list[float], limit: int = 5) -> list[SearchResult]:
+    def search(
+        self,
+        query_vector: list[float],
+        limit: int = 5,
+        document_ids: list[str] | None = None,
+    ) -> list[SearchResult]:
         self.validate_vector_dimension(query_vector)
         query = np.asarray(query_vector, dtype=np.float32)
         if not np.linalg.norm(query):
             return []
+        selected = set(document_ids) if document_ids else None
         with self.lock:
             rows = self.conn.execute(
                 "SELECT content, metadata, embedding FROM documents WHERE embedding IS NOT NULL"
             ).fetchall()
         scored = []
         for content, metadata, raw_embedding in rows:
+            parsed_metadata = _metadata_dict(metadata)
+            if (
+                selected is not None
+                and parsed_metadata.get("document_id") not in selected
+            ):
+                continue
             embedding = np.frombuffer(raw_embedding, dtype=np.float32)
             if embedding.size != self.dimension:
                 raise IndexCompatibilityError()
@@ -115,12 +139,104 @@ class SQLiteVectorDB(VectorDB):
                 if norm
                 else 0.0
             )
-            scored.append((similarity, content, metadata))
+            scored.append((similarity, content, parsed_metadata))
         scored.sort(key=lambda row: row[0], reverse=True)
         return [
-            SearchResult(content, json.loads(metadata or "{}"), score)
+            SearchResult(content, metadata, score)
             for score, content, metadata in scored[:limit]
         ]
+
+    def list_documents(self):
+        with self.lock:
+            rows = self.conn.execute("SELECT metadata FROM documents").fetchall()
+        grouped = {}
+        for (metadata,) in rows:
+            parsed = _metadata_dict(metadata)
+            document_id = parsed.get("document_id") or ""
+            document_name = (
+                (parsed.get("document_name") or "Unknown document")
+                if document_id
+                else "Unidentified chunks"
+            )
+            entry = grouped.setdefault(
+                document_id,
+                {
+                    "document_id": document_id,
+                    "document_name": document_name,
+                    "chunks": 0,
+                    "pages": set(),
+                },
+            )
+            entry["chunks"] += 1
+            if parsed.get("page") is not None:
+                entry["pages"].add(str(parsed["page"]))
+        documents = []
+        for entry in grouped.values():
+            entry["pages"] = len(entry["pages"])
+            documents.append(entry)
+        documents.sort(
+            key=lambda item: (item["document_name"].lower(), item["document_id"])
+        )
+        return documents
+
+    def document_exists(self, document_id: str) -> bool:
+        with self.lock:
+            rows = self.conn.execute("SELECT metadata FROM documents").fetchall()
+        return any(
+            _metadata_dict(metadata).get("document_id") == document_id
+            for (metadata,) in rows
+        )
+
+    def delete_documents(self, document_ids: list[str]) -> int:
+        selected = set(document_ids)
+        if not selected:
+            return 0
+        with self.lock:
+            rows = self.conn.execute("SELECT id, metadata FROM documents").fetchall()
+            targets = [
+                row_id
+                for row_id, metadata in rows
+                if _metadata_dict(metadata).get("document_id") in selected
+            ]
+            if not targets:
+                return 0
+            try:
+                self.conn.executemany(
+                    "DELETE FROM documents WHERE id = ?",
+                    [(row_id,) for row_id in targets],
+                )
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+        return len(targets)
+
+    def replace_documents(self, document_id: str, data: list[tuple]) -> int:
+        rows = self._serialize_rows(data)
+        with self.lock:
+            existing = self.conn.execute(
+                "SELECT id, metadata FROM documents"
+            ).fetchall()
+            targets = [
+                row_id
+                for row_id, metadata in existing
+                if _metadata_dict(metadata).get("document_id") == document_id
+            ]
+            try:
+                if targets:
+                    self.conn.executemany(
+                        "DELETE FROM documents WHERE id = ?",
+                        [(row_id,) for row_id in targets],
+                    )
+                self.conn.executemany(
+                    "INSERT INTO documents(content, metadata, embedding) VALUES (?, ?, ?)",
+                    rows,
+                )
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+        return len(targets)
 
     def delete_all_documents(self):
         with self.lock:

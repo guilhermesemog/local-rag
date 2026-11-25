@@ -23,6 +23,13 @@ class EmptyDocumentError(AppError):
     public_message = "The PDF contains no processable text."
 
 
+class NoMatchingDocumentsError(AppError):
+    status_code = 400
+    public_message = (
+        "No chunks matched the selected documents. Adjust the document filter."
+    )
+
+
 class EmbeddingError(AppError):
     status_code = 500
     public_message = "Document processing failed while generating embeddings."

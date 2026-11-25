@@ -111,7 +111,7 @@ class PostgresVectorDB(VectorDB):
         if len(vector) != self.dimension:
             raise IndexCompatibilityError()
 
-    def insert_documents(self, data: list[tuple]):
+    def _serialize_rows(self, data: list[tuple]):
         rows = []
         for content, metadata, embedding in data:
             self.validate_vector_dimension(embedding)
@@ -119,6 +119,10 @@ class PostgresVectorDB(VectorDB):
                 json.loads(metadata) if isinstance(metadata, str) else metadata
             )
             rows.append((content, Json(parsed_metadata), embedding))
+        return rows
+
+    def insert_documents(self, data: list[tuple]):
+        rows = self._serialize_rows(data)
         with self._connection() as connection:
             with connection.cursor() as cursor:
                 execute_values(
@@ -128,18 +132,101 @@ class PostgresVectorDB(VectorDB):
                 )
             connection.commit()
 
-    def search(self, query_vector: list[float], limit: int = 5) -> list[SearchResult]:
+    def search(
+        self,
+        query_vector: list[float],
+        limit: int = 5,
+        document_ids: list[str] | None = None,
+    ) -> list[SearchResult]:
         self.validate_vector_dimension(query_vector)
         with self._connection() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT content, metadata, 1 - (embedding <=> %s::vector) "
-                    "FROM embeddings.documents ORDER BY embedding <=> %s::vector LIMIT %s",
-                    (query_vector, query_vector, limit),
-                )
+                if document_ids:
+                    cursor.execute(
+                        "SELECT content, metadata, 1 - (embedding <=> %s::vector) "
+                        "FROM embeddings.documents "
+                        "WHERE metadata->>'document_id' = ANY(%s) "
+                        "ORDER BY embedding <=> %s::vector LIMIT %s",
+                        (query_vector, list(document_ids), query_vector, limit),
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT content, metadata, 1 - (embedding <=> %s::vector) "
+                        "FROM embeddings.documents ORDER BY embedding <=> %s::vector LIMIT %s",
+                        (query_vector, query_vector, limit),
+                    )
                 rows = cursor.fetchall()
             connection.rollback()
         return [SearchResult(row[0], row[1] or {}, float(row[2])) for row in rows]
+
+    def list_documents(self):
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COALESCE(metadata->>'document_id', '') AS document_id, "
+                    "CASE WHEN COALESCE(metadata->>'document_id', '') = '' "
+                    "THEN 'Unidentified chunks' "
+                    "ELSE COALESCE(NULLIF(metadata->>'document_name', ''), "
+                    "'Unknown document') END AS document_name, "
+                    "COUNT(*) AS chunks, "
+                    "COUNT(DISTINCT NULLIF(metadata->>'page', '')) AS pages "
+                    "FROM embeddings.documents GROUP BY 1, 2 ORDER BY 2, 1"
+                )
+                rows = cursor.fetchall()
+            connection.rollback()
+        return [
+            {
+                "document_id": row[0],
+                "document_name": row[1],
+                "chunks": int(row[2]),
+                "pages": int(row[3]),
+            }
+            for row in rows
+        ]
+
+    def document_exists(self, document_id: str) -> bool:
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT EXISTS(SELECT 1 FROM embeddings.documents "
+                    "WHERE metadata->>'document_id' = %s)",
+                    (document_id,),
+                )
+                exists = cursor.fetchone()[0]
+            connection.rollback()
+            return bool(exists)
+
+    def delete_documents(self, document_ids: list[str]) -> int:
+        if not document_ids:
+            return 0
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM embeddings.documents "
+                    "WHERE metadata->>'document_id' = ANY(%s)",
+                    (list(document_ids),),
+                )
+                deleted = cursor.rowcount
+            connection.commit()
+            return deleted
+
+    def replace_documents(self, document_id: str, data: list[tuple]) -> int:
+        rows = self._serialize_rows(data)
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM embeddings.documents "
+                    "WHERE metadata->>'document_id' = %s",
+                    (document_id,),
+                )
+                deleted = cursor.rowcount
+                execute_values(
+                    cursor,
+                    "INSERT INTO embeddings.documents(content, metadata, embedding) VALUES %s",
+                    rows,
+                )
+            connection.commit()
+            return deleted
 
     def delete_all_documents(self):
         with self._connection() as connection:
